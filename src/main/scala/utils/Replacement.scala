@@ -24,7 +24,6 @@ import chisel3.util._
 import chisel3.util.random.LFSR
 import freechips.rocketchip.util._
 import freechips.rocketchip.util.property.cover
-import xiangshan.{XSCoreParameters}
 
 object ReplacementPolicy {
   //for fully associative mapping
