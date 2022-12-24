@@ -1,4 +1,4 @@
-package utils
+package utility
 
 import chisel3._
 import chipsalliance.rocketchip.config.Parameters

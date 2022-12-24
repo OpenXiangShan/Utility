@@ -55,7 +55,7 @@ object `rocket-chip` extends SbtModule with CommonModule {
 
 }
 
-object utils extends SbtModule with ScalafmtModule with CommonModule {
+object utility extends SbtModule with ScalafmtModule with CommonModule {
 
   override def millSourcePath = millOuterCtx.millSourcePath
 

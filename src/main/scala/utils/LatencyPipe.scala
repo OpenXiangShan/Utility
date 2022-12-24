@@ -16,7 +16,7 @@
 
 // See LICENSE.Berkeley for license details.
 
-package utils
+package utility
 
 import Chisel._
 
