@@ -7,8 +7,26 @@ import chipsalliance.rocketchip.config.Parameters
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util.BundleField
-import huancun.XbarCircuit
 
+
+class XbarCircuit
+(
+  policy: TLArbiter.Policy,
+  edgeIn: Seq[TLEdge],
+  edgeOut: Seq[TLEdge]
+) extends Module {
+
+  val io = IO(new Bundle{
+    val in = MixedVec(edgeIn.map(e => Flipped(TLBundle(e.bundle))))
+    val out = MixedVec(edgeOut.map(e => TLBundle(e.bundle)))
+  })
+
+  val inSeq = io.in.zip(edgeIn)
+  val outSeq = io.out.zip(edgeOut)
+
+  TLXbar.circuit(policy, inSeq, outSeq)
+
+}
 
 case class BinaryArbiterNode
 (
