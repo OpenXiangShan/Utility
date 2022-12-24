@@ -3,7 +3,7 @@ init:
 	cd rocket-chip && git submodule update --init hardfloat api-config-chipsalliance
 
 compile:
-	mill -i utils.compile
+	mill -i utility.compile
 
 idea:
 	mill -i mill.scalalib.GenIdea/idea

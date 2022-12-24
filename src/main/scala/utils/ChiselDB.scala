@@ -1,4 +1,20 @@
-package utils
+/***************************************************************************************
+* Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
+* Copyright (c) 2020-2021 Peng Cheng Laboratory
+*
+* XiangShan is licensed under Mulan PSL v2.
+* You can use this software according to the terms and conditions of the Mulan PSL v2.
+* You may obtain a copy of Mulan PSL v2 at:
+*          http://license.coscl.org.cn/MulanPSL2
+*
+* THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+* EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+* MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+*
+* See the Mulan PSL v2 for more details.
+***************************************************************************************/
+
+package utility
 
 import chisel3._
 import chisel3.experimental.StringParam
@@ -94,13 +110,15 @@ class Table[T <: Record](val tableName: String, val hw: T) extends HasTableUtils
          |  char * site
          |) {
          |  if(!dump) return;
-         |  char sql[512];
+         |  char * format = "INSERT INTO $tableName(${cols.map(_.toUpperCase).mkString(",")}, STAMP, SITE) " \\
+         |                  "VALUES(${cols.map(_ => "%ld").mkString(", ")}, %ld, '%s');";
+         |  char * sql = (char *)malloc(${cols.size + 1} * sizeof(uint64_t) + (strlen(format)+strlen(site)) * sizeof(char));
          |  sprintf(sql,
-         |    "INSERT INTO $tableName(${cols.map(_.toUpperCase).mkString(",")}, STAMP, SITE) " \\
-         |    "VALUES(${cols.map(_ => "%ld").mkString(", ")}, %ld, '%s');",
+         |    format,
          |    ${cols.mkString(",")}, stamp, site
          |  );
          |  rc = sqlite3_exec(mem_db, sql, callback, 0, &zErrMsg);
+         |  free(sql);
          |  if(rc != SQLITE_OK) {
          |    printf("SQL error: %s\\n", zErrMsg);
          |    exit(0);
