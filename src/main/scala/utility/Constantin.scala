@@ -26,7 +26,7 @@ import scala.reflect._
 
 trait ConstantinParams {
   def UIntWidth = 64
-  def AutoSolving = true
+  def AutoSolving = false
   def getdpicFunc(constName: String) = {
     s"${constName}_constantin_read"
   }
