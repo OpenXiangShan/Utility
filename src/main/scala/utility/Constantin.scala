@@ -26,6 +26,7 @@ import scala.reflect._
 
 trait ConstantinParams {
   def UIntWidth = 64
+  def AutoSolving = false
   def getdpicFunc(constName: String) = {
     s"${constName}_constantin_read"
   }
@@ -132,6 +133,34 @@ object Constantin extends ConstantinParams {
        |}
        |""".stripMargin + recordMap.map({a => getCpp(a._1)}).foldLeft("")(_ + _)
   }
+  def getPreProcessFromStdInCpp: String = {
+    s"""
+       |#include <iostream>
+       |#include <fstream>
+       |#include <map>
+       |#include <string>
+       |#include <string>
+       |#include <cstdlib>
+       |#include <stdint.h>
+       |using namespace std;
+       |
+       |fstream cf;
+       |map<string, uint64_t> constantinMap;
+       |void constantinLoad() {
+       |  uint64_t num;
+       |  string tmp;
+       |  uint64_t total_num;
+       |  cout << "please input total constant number" << endl;
+       |  cin >> total_num;
+       |  cout << "please input each constant ([constant name] [value])" << endl;
+       |  for(int i=0; i<total_num; i++) {
+       |    cin >> tmp >> num;
+       |    constantinMap.insert(make_pair(tmp, num));
+       |  }
+       |
+       |}
+       |""".stripMargin + recordMap.map({a => getCpp(a._1)}).reduce(_ + _)
+  }
   def getCpp(constName: String): String = {
     s"""
        |#include <map>
@@ -147,7 +176,11 @@ object Constantin extends ConstantinParams {
 
   def addToElaborationArtefacts = {
     ElaborationArtefacts.add("hxx", getCHeader)
-    ElaborationArtefacts.add("cxx", getPreProcessCpp)
+    if(AutoSolving) {
+      ElaborationArtefacts.add("cxx", getPreProcessFromStdInCpp)
+    }else {
+      ElaborationArtefacts.add("cxx", getPreProcessCpp)
+    }
     // recordMap.map({a => ElaborationArtefacts.add("cpp", getCpp(a._1))})
   }
 
