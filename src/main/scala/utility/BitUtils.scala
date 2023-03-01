@@ -347,3 +347,20 @@ object SelectOne {
     }
   }
 }
+
+/**
+ * SelectFirstN: select n index from bit mask, low bit has high priority.
+ */
+object SelectFirstN {
+  def apply(in: UInt, n: Int, valid: UInt) = {
+    val sels = Wire(Vec(n, UInt(in.getWidth.W)))
+    var mask = in 
+
+    for (i <- 0 until n) {
+      sels(i) := PriorityEncoderOH(mask) & Fill(in.getWidth, valid(i))
+      mask = mask & ~sels(i)
+    }
+
+    sels
+  }
+}
