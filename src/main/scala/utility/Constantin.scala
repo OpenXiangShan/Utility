@@ -122,11 +122,11 @@ object Constantin extends ConstantinParams {
        |  uint64_t num;
        |  string tmp;
        |  string noop_home = getenv("NOOP_HOME");
-       |  tmp = noop_home + "/build/constantin.txt";
+       |  tmp = noop_home + "/src/main/resources/constantin.txt";
        |  cf.open(tmp.c_str(), ios::in);
        |  while (!cf.eof()) {
        |    cf>>tmp>>num;
-       |    constantinMap.insert(make_pair(tmp, num));
+       |    constantinMap[tmp] = num;
        |  }
        |  cf.close();
        |
@@ -155,7 +155,7 @@ object Constantin extends ConstantinParams {
        |  cout << "please input each constant ([constant name] [value])" << endl;
        |  for(int i=0; i<total_num; i++) {
        |    cin >> tmp >> num;
-       |    constantinMap.insert(make_pair(tmp, num));
+       |    constantinMap[tmp] = num;
        |  }
        |
        |}
@@ -166,9 +166,17 @@ object Constantin extends ConstantinParams {
        |#include <map>
        |#include <string>
        |#include <stdint.h>
+       |#include <assert.h>
        |using namespace std;
        |extern map<string, uint64_t> constantinMap;
        |extern "C" uint64_t ${getdpicFunc(constName)}() {
+       |  assert(constantinMap.find("${constName}")!=constantinMap.end() && "${constName} not found in constantinMap");
+       |  // output constantin different result
+       |  static int a = -1;
+       |  if(a != constantinMap["${constName}"]){
+       |    cout << "${constName}" << " = " << constantinMap["${constName}"] << endl;
+       |    a = constantinMap["${constName}"];
+       |  }
        |  return constantinMap["${constName}"];
        |}
        |""".stripMargin
