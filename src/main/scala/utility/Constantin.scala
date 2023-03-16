@@ -16,13 +16,8 @@
 
 package utility
 
-import chipsalliance.rocketchip.config.Parameters
 import chisel3._
-import chisel3.experimental.StringParam
 import chisel3.util._
-import freechips.rocketchip.util.ElaborationArtefacts
-
-import scala.reflect._
 
 trait ConstantinParams {
   def UIntWidth = 64
@@ -77,6 +72,8 @@ class MuxModule[A <: Record](gen: A, n: Int) extends Module {
 
 object Constantin extends ConstantinParams {
   private val recordMap = scala.collection.mutable.Map[String, UInt]()
+  private val objectName = "constantin"
+
   def createRecord(constName: String): UInt = {
     val t = WireInit(0.U.asTypeOf(UInt(UIntWidth.W)))
     if (recordMap.contains(constName)) {
@@ -122,7 +119,7 @@ object Constantin extends ConstantinParams {
        |  uint64_t num;
        |  string tmp;
        |  string noop_home = getenv("NOOP_HOME");
-       |  tmp = noop_home + "/src/main/resources/constantin.txt";
+       |  tmp = noop_home + "/build/${objectName}.txt";
        |  cf.open(tmp.c_str(), ios::in);
        |  while (!cf.eof()) {
        |    cf>>tmp>>num;
@@ -182,14 +179,18 @@ object Constantin extends ConstantinParams {
        |""".stripMargin
   }
 
-  def addToElaborationArtefacts = {
-    ElaborationArtefacts.add("hxx", getCHeader)
+  def getTXT: String = {
+    recordMap.map({a => a._1 +" 0\n"}).reduce(_ + _)
+  }
+
+  def addToFileRegisters = {
+    FileRegisters.add(s"${objectName}.hpp", getCHeader)
     if(AutoSolving) {
-      ElaborationArtefacts.add("cxx", getPreProcessFromStdInCpp)
+      FileRegisters.add(s"${objectName}.cpp", getPreProcessFromStdInCpp)
     }else {
-      ElaborationArtefacts.add("cxx", getPreProcessCpp)
+      FileRegisters.add(s"${objectName}.cpp", getPreProcessCpp)
     }
-    // recordMap.map({a => ElaborationArtefacts.add("cpp", getCpp(a._1))})
+    FileRegisters.add(s"${objectName}.txt", getTXT)
   }
 
 }
