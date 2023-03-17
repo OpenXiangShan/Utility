@@ -156,7 +156,7 @@ object Constantin extends ConstantinParams {
        |  }
        |
        |}
-       |""".stripMargin + recordMap.map({a => getCpp(a._1)}).reduce(_ + _)
+       |""".stripMargin + recordMap.map({a => getCpp(a._1)}).foldLeft("")(_ + _)
   }
   def getCpp(constName: String): String = {
     s"""
@@ -180,7 +180,7 @@ object Constantin extends ConstantinParams {
   }
 
   def getTXT: String = {
-    recordMap.map({a => a._1 +" 0\n"}).reduce(_ + _)
+    recordMap.map({a => a._1 +" 0\n"}).foldLeft("")(_ + _)
   }
 
   def addToFileRegisters = {
