@@ -19,7 +19,6 @@ package utility
 import chisel3._
 import chisel3.experimental.StringParam
 import chisel3.util._
-import freechips.rocketchip.util.ElaborationArtefacts
 
 trait HasTableUtils {
   case class RefPort(ref: String, width: Int)
@@ -303,10 +302,9 @@ object ChiselDB {
        |
        |""".stripMargin
   }
-
-  def addToElaborationArtefacts = {
-    ElaborationArtefacts.add("h", getCHeader)
-    ElaborationArtefacts.add("cpp", getCpp)
+  def addToFileRegisters = {
+    FileRegisters.add("chisel_db.h", getCHeader)
+    FileRegisters.add("chisel_db.cpp", getCpp)
   }
 
 }
