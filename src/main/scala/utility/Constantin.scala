@@ -73,8 +73,13 @@ class MuxModule[A <: Record](gen: A, n: Int) extends Module {
 object Constantin extends ConstantinParams {
   private val recordMap = scala.collection.mutable.Map[String, UInt]()
   private val objectName = "constantin"
+  private var envInFPGA = false
 
-  def createRecord(envInFPGA: Boolean, constName: String, initValue: UInt = 0.U): UInt = {
+  def init(envInFPGA: Boolean): Unit = {
+    this.envInFPGA = envInFPGA
+  }
+
+  def createRecord(constName: String, initValue: UInt = 0.U): UInt = {
     val t = WireInit(initValue.asTypeOf(UInt(UIntWidth.W)))
     if (recordMap.contains(constName)) {
       recordMap.getOrElse(constName, 0.U)
