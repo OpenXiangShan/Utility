@@ -74,23 +74,26 @@ object Constantin extends ConstantinParams {
   private val recordMap = scala.collection.mutable.Map[String, UInt]()
   private val objectName = "constantin"
 
-  def createRecord(constName: String): UInt = {
-    val t = WireInit(0.U.asTypeOf(UInt(UIntWidth.W)))
+  def createRecord(envInFPGA: Boolean, constName: String, initValue: UInt = 0.U): UInt = {
+    val t = WireInit(initValue.asTypeOf(UInt(UIntWidth.W)))
     if (recordMap.contains(constName)) {
       recordMap.getOrElse(constName, 0.U)
     } else {
       recordMap += (constName -> t)
-      val recordModule = Module(new SignalReadHelper(constName))
-      //recordModule.io.clock := Clock()
-      //recordModule.io.reset := Reset()
-      t := recordModule.io.value
+       if (envInFPGA) {
+         println(s"Constantin initRead: ${constName} = ${initValue}")
+         recordMap.getOrElse(constName, 0.U)
+       } else {
+        val recordModule = Module(new SignalReadHelper(constName))
+        //recordModule.io.clock := Clock()
+        //recordModule.io.reset := Reset()
+        t := recordModule.io.value
 
-      // print record info
-      println(s"Constantin ${constName}")
-
-      t
+        // print record info
+         println(s"Constantin fileRead: ${constName} = ${initValue}")
+        t
+       }
     }
-
   }
 
   def getCHeader: String = {
