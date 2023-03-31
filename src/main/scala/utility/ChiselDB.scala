@@ -79,7 +79,7 @@ trait HasTableUtils {
   }
 }
 
-class Table[T <: Record](val tableName: String, val hw: T) extends HasTableUtils {
+class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: T) extends HasTableUtils {
 
   def genCpp: (String, String) = {
     val cols = get_columns(hw, "").map(_.field)
@@ -128,14 +128,16 @@ class Table[T <: Record](val tableName: String, val hw: T) extends HasTableUtils
   }
 
   def log(data: T, en: Bool, site: String = "", clock: Clock, reset: Reset): Unit = {
-    val writer = Module(new TableWriteHelper[T](tableName, hw, site))
-    val cnt = RegInit(0.U(64.W))
-    cnt := cnt + 1.U
-    writer.io.clock := clock
-    writer.io.reset := reset
-    writer.io.en := en
-    writer.io.stamp := cnt
-    writer.io.data := data
+    if(!envInFPGA){
+      val writer = Module(new TableWriteHelper[T](tableName, hw, site))
+      val cnt = RegInit(0.U(64.W))
+      cnt := cnt + 1.U
+      writer.io.clock := clock
+      writer.io.reset := reset
+      writer.io.en := en
+      writer.io.stamp := cnt
+      writer.io.data := data
+    }
   }
 
   def log(data: Valid[T], site: String, clock: Clock, reset: Reset): Unit = {
@@ -222,7 +224,7 @@ object ChiselDB {
         old.asInstanceOf[Table[T]]
       })
       .getOrElse({
-        val t = new Table[T](tableName, hw)
+        val t = new Table[T](this.envInFPGA, tableName, hw)
         table_map += (tableName -> t)
         t
       })
