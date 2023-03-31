@@ -207,6 +207,12 @@ private class TableWriteHelper[T <: Record](tableName: String, hw: T, site: Stri
 object ChiselDB {
 
   private val table_map = scala.collection.mutable.Map[String, Table[_]]()
+  private var envInFPGA = false
+
+  def init(envInFPGA: Boolean): Unit = {
+    // Not needed at the moment
+    this.envInFPGA = envInFPGA
+  }
 
   def createTable[T <: Record](tableName: String, hw: T): Table[T] = {
     table_map
