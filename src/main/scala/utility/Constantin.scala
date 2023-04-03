@@ -71,6 +71,9 @@ class MuxModule[A <: Record](gen: A, n: Int) extends Module {
 * */
 
 object Constantin extends ConstantinParams {
+  // store init value => just UInt
+  private val initMap = scala.collection.mutable.Map[String, UInt]()
+  // store read value => initRead: UInt | fileRead: Wire(UInt)
   private val recordMap = scala.collection.mutable.Map[String, UInt]()
   private val objectName = "constantin"
   private var envInFPGA = false
@@ -80,13 +83,15 @@ object Constantin extends ConstantinParams {
   }
 
   def createRecord(constName: String, initValue: UInt = 0.U): UInt = {
+    initMap += (constName -> initValue)
+
     val t = WireInit(initValue.asTypeOf(UInt(UIntWidth.W)))
     if (recordMap.contains(constName)) {
       recordMap.getOrElse(constName, 0.U)
     } else {
       recordMap += (constName -> t)
        if (envInFPGA) {
-         println(s"Constantin initRead: ${constName} = ${initValue}")
+         println(s"Constantin initRead: ${constName} = ${initValue.litValue}")
          recordMap.getOrElse(constName, 0.U)
        } else {
         val recordModule = Module(new SignalReadHelper(constName))
@@ -95,7 +100,7 @@ object Constantin extends ConstantinParams {
         t := recordModule.io.value
 
         // print record info
-         println(s"Constantin fileRead: ${constName} = ${initValue}")
+        println(s"Constantin fileRead: ${constName} = ${initValue.litValue}")
         t
        }
     }
@@ -188,7 +193,7 @@ object Constantin extends ConstantinParams {
   }
 
   def getTXT: String = {
-    recordMap.map({a => a._1 +" 0\n"}).foldLeft("")(_ + _)
+    initMap.map({a => a._1 + s" ${a._2.litValue}\n"}).foldLeft("")(_ + _)
   }
 
   def addToFileRegisters = {
