@@ -42,7 +42,6 @@ class ForwardRegistered[T<: Data](gen: T) extends RegisterSlice[T](gen) {
 class BackwardRegistered[T<: Data](gen: T) extends RegisterSlice[T](gen) {
 
   val ready = RegInit(true.B)
-  val valid_buf = RegInit(false.B)
   val payload_buf = RegInit(0.U.asTypeOf(gen))
   val is_buf_full = RegInit(false.B)
 
@@ -50,7 +49,6 @@ class BackwardRegistered[T<: Data](gen: T) extends RegisterSlice[T](gen) {
     is (false.B) {
       when (io.in.valid & !io.out.ready) {
         is_buf_full := true.B
-        valid_buf := true.B
         payload_buf := io.in.bits
         ready := false.B
       }
@@ -58,19 +56,17 @@ class BackwardRegistered[T<: Data](gen: T) extends RegisterSlice[T](gen) {
     is (true.B) {
       when (io.out.ready) {
         is_buf_full := false.B
-        valid_buf := false.B
         ready := true.B
       }
     }
   }
-  
+
   when (io.flush) {
     ready := true.B
-    valid_buf := false.B
     is_buf_full := false.B
   }
 
-  io.out.valid := Mux(is_buf_full, valid_buf, io.in.valid)
+  io.out.valid := is_buf_full | io.in.valid
   io.out.bits := Mux(is_buf_full, payload_buf, io.in.bits)
   io.in.ready := ready
 }
