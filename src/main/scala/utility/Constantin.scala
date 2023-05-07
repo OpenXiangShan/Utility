@@ -76,10 +76,10 @@ object Constantin extends ConstantinParams {
   // store read value => initRead: UInt | fileRead: Wire(UInt)
   private val recordMap = scala.collection.mutable.Map[String, UInt]()
   private val objectName = "constantin"
-  private var envInFPGA = false
+  private var enable = true
 
-  def init(envInFPGA: Boolean): Unit = {
-    this.envInFPGA = envInFPGA
+  def init(enable: Boolean): Unit = {
+    this.enable = enable
   }
 
   def createRecord(constName: String, initValue: UInt = 0.U): UInt = {
@@ -90,7 +90,7 @@ object Constantin extends ConstantinParams {
       recordMap.getOrElse(constName, 0.U)
     } else {
       recordMap += (constName -> t)
-       if (envInFPGA) {
+       if (!this.enable) {
          println(s"Constantin initRead: ${constName} = ${initValue.litValue}")
          recordMap.getOrElse(constName, 0.U)
        } else {
