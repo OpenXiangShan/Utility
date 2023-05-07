@@ -128,15 +128,22 @@ object Constantin extends ConstantinParams {
        |
        |fstream cf;
        |map<string, uint64_t> constantinMap;
+       |int defaultFlag = 0;
+       |
        |void constantinLoad() {
        |  uint64_t num;
        |  string tmp;
        |  string noop_home = getenv("NOOP_HOME");
        |  tmp = noop_home + "/build/${objectName}.txt";
        |  cf.open(tmp.c_str(), ios::in);
-       |  while (!cf.eof()) {
-       |    cf>>tmp>>num;
-       |    constantinMap[tmp] = num;
+       |  if(cf.good()){
+       |    defaultFlag = 0;
+       |    while (cf >> tmp >> num) {
+       |      constantinMap[tmp] = num;
+       |    }
+       |  }else{
+       |    defaultFlag = 1;
+       |    cout << "[warning]: " << tmp << " does not exist, so all constants default to 0." << endl;
        |  }
        |  cf.close();
        |
@@ -156,6 +163,8 @@ object Constantin extends ConstantinParams {
        |
        |fstream cf;
        |map<string, uint64_t> constantinMap;
+       |int defaultFlag = 0;
+       |
        |void constantinLoad() {
        |  uint64_t num;
        |  string tmp;
@@ -179,7 +188,9 @@ object Constantin extends ConstantinParams {
        |#include <assert.h>
        |using namespace std;
        |extern map<string, uint64_t> constantinMap;
+       |extern int defaultFlag;
        |extern "C" uint64_t ${getdpicFunc(constName)}() {
+       |  if(defaultFlag) return 0;
        |  assert(constantinMap.find("${constName}")!=constantinMap.end() && "${constName} not found in constantinMap");
        |  // output constantin different result
        |  static int a = -1;
