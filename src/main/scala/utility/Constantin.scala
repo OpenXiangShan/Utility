@@ -208,15 +208,13 @@ object Constantin extends ConstantinParams {
   }
 
   def addToFileRegisters = {
-    if(this.enable) {
-      FileRegisters.add(s"${objectName}.hpp", getCHeader)
-      if (AutoSolving) {
-        FileRegisters.add(s"${objectName}.cpp", getPreProcessFromStdInCpp)
-      } else {
-        FileRegisters.add(s"${objectName}.cpp", getPreProcessCpp)
-      }
-      FileRegisters.add(s"${objectName}.txt", getTXT)
+    FileRegisters.add(s"${objectName}.hpp", getCHeader)
+    if (AutoSolving) {
+      FileRegisters.add(s"${objectName}.cpp", getPreProcessFromStdInCpp)
+    } else {
+      FileRegisters.add(s"${objectName}.cpp", getPreProcessCpp)
     }
+    FileRegisters.add(s"${objectName}.txt", getTXT)
   }
 
 }
