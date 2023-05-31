@@ -115,55 +115,64 @@ object Constantin extends ConstantinParams {
        |""".stripMargin
   }
 
+  def getInitCpp: String = {
+    val initStr = initMap.map({ a => s"""  constantinMap["${a._1}"] = ${a._2.litValue};\n""" }).foldLeft("")(_ + _)
+    s"""
+       |#include <map>
+       |#include <string>
+       |using namespace std;
+       |
+       |map<string, uint64_t> constantinMap;
+       |
+       |void constantinInit(){
+       |${initStr}
+       |}
+       |""".stripMargin
+  }
+
   def getPreProcessCpp: String = {
     s"""
        |#include <iostream>
        |#include <fstream>
        |#include <map>
        |#include <string>
-       |#include <string>
        |#include <cstdlib>
        |#include <stdint.h>
        |using namespace std;
        |
        |fstream cf;
-       |map<string, uint64_t> constantinMap;
-       |int defaultFlag = 0;
+       |extern map<string, uint64_t> constantinMap;
        |
        |void constantinLoad() {
+       |  constantinInit();
        |  uint64_t num;
        |  string tmp;
        |  string noop_home = getenv("NOOP_HOME");
        |  tmp = noop_home + "/build/${objectName}.txt";
        |  cf.open(tmp.c_str(), ios::in);
        |  if(cf.good()){
-       |    defaultFlag = 0;
        |    while (cf >> tmp >> num) {
        |      constantinMap[tmp] = num;
        |    }
        |  }else{
-       |    defaultFlag = 1;
-       |    cout << "[warning]: " << tmp << " does not exist, so all constants default to 0." << endl;
+       |    cout << "[WARNING] " << tmp << " does not exist, so all constants default to initialized values." << endl;
        |  }
        |  cf.close();
        |
        |}
-       |""".stripMargin + recordMap.map({a => getCpp(a._1)}).foldLeft("")(_ + _)
+       |""".stripMargin
   }
+
   def getPreProcessFromStdInCpp: String = {
     s"""
        |#include <iostream>
-       |#include <fstream>
        |#include <map>
-       |#include <string>
        |#include <string>
        |#include <cstdlib>
        |#include <stdint.h>
        |using namespace std;
        |
-       |fstream cf;
-       |map<string, uint64_t> constantinMap;
-       |int defaultFlag = 0;
+       |extern map<string, uint64_t> constantinMap;
        |
        |void constantinLoad() {
        |  uint64_t num;
@@ -178,8 +187,9 @@ object Constantin extends ConstantinParams {
        |  }
        |
        |}
-       |""".stripMargin + recordMap.map({a => getCpp(a._1)}).foldLeft("")(_ + _)
+       |""".stripMargin
   }
+
   def getCpp(constName: String): String = {
     s"""
        |#include <map>
@@ -188,11 +198,7 @@ object Constantin extends ConstantinParams {
        |#include <assert.h>
        |using namespace std;
        |extern map<string, uint64_t> constantinMap;
-       |extern int defaultFlag;
        |extern "C" uint64_t ${getdpicFunc(constName)}() {
-       |  if(defaultFlag) return 0;
-       |  assert(constantinMap.find("${constName}")!=constantinMap.end() && "${constName} not found in constantinMap");
-       |  // output constantin different result
        |  static int a = -1;
        |  if(a != constantinMap["${constName}"]){
        |    cout << "${constName}" << " = " << constantinMap["${constName}"] << endl;
@@ -209,11 +215,14 @@ object Constantin extends ConstantinParams {
 
   def addToFileRegisters = {
     FileRegisters.add(s"${objectName}.hpp", getCHeader)
+    var cppContext = getInitCpp
     if (AutoSolving) {
-      FileRegisters.add(s"${objectName}.cpp", getPreProcessFromStdInCpp)
+      cppContext += getPreProcessFromStdInCpp
     } else {
-      FileRegisters.add(s"${objectName}.cpp", getPreProcessCpp)
+      cppContext += getPreProcessCpp
     }
+    cppContext += recordMap.map({a => getCpp(a._1)}).foldLeft("")(_ + _)
+    FileRegisters.add(s"${objectName}.cpp", cppContext)
     FileRegisters.add(s"${objectName}.txt", getTXT)
   }
 
