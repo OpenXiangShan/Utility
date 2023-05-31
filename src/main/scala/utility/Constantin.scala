@@ -71,22 +71,27 @@ class MuxModule[A <: Record](gen: A, n: Int) extends Module {
 * */
 
 object Constantin extends ConstantinParams {
+  // store init value => just UInt
+  private val initMap = scala.collection.mutable.Map[String, UInt]()
+  // store read value => initRead: UInt | fileRead: Wire(UInt)
   private val recordMap = scala.collection.mutable.Map[String, UInt]()
   private val objectName = "constantin"
-  private var envInFPGA = false
+  private var enable = true
 
-  def init(envInFPGA: Boolean): Unit = {
-    this.envInFPGA = envInFPGA
+  def init(enable: Boolean): Unit = {
+    this.enable = enable
   }
 
   def createRecord(constName: String, initValue: UInt = 0.U): UInt = {
+    initMap += (constName -> initValue)
+
     val t = WireInit(initValue.asTypeOf(UInt(UIntWidth.W)))
     if (recordMap.contains(constName)) {
       recordMap.getOrElse(constName, 0.U)
     } else {
       recordMap += (constName -> t)
-       if (envInFPGA) {
-         println(s"Constantin initRead: ${constName} = ${initValue}")
+       if (!this.enable) {
+         println(s"Constantin initRead: ${constName} = ${initValue.litValue}")
          recordMap.getOrElse(constName, 0.U)
        } else {
         val recordModule = Module(new SignalReadHelper(constName))
@@ -95,7 +100,7 @@ object Constantin extends ConstantinParams {
         t := recordModule.io.value
 
         // print record info
-         println(s"Constantin fileRead: ${constName} = ${initValue}")
+        println(s"Constantin fileRead: ${constName} = ${initValue.litValue}")
         t
        }
     }
@@ -123,15 +128,22 @@ object Constantin extends ConstantinParams {
        |
        |fstream cf;
        |map<string, uint64_t> constantinMap;
+       |int defaultFlag = 0;
+       |
        |void constantinLoad() {
        |  uint64_t num;
        |  string tmp;
        |  string noop_home = getenv("NOOP_HOME");
        |  tmp = noop_home + "/build/${objectName}.txt";
        |  cf.open(tmp.c_str(), ios::in);
-       |  while (!cf.eof()) {
-       |    cf>>tmp>>num;
-       |    constantinMap[tmp] = num;
+       |  if(cf.good()){
+       |    defaultFlag = 0;
+       |    while (cf >> tmp >> num) {
+       |      constantinMap[tmp] = num;
+       |    }
+       |  }else{
+       |    defaultFlag = 1;
+       |    cout << "[warning]: " << tmp << " does not exist, so all constants default to 0." << endl;
        |  }
        |  cf.close();
        |
@@ -151,6 +163,8 @@ object Constantin extends ConstantinParams {
        |
        |fstream cf;
        |map<string, uint64_t> constantinMap;
+       |int defaultFlag = 0;
+       |
        |void constantinLoad() {
        |  uint64_t num;
        |  string tmp;
@@ -174,7 +188,9 @@ object Constantin extends ConstantinParams {
        |#include <assert.h>
        |using namespace std;
        |extern map<string, uint64_t> constantinMap;
+       |extern int defaultFlag;
        |extern "C" uint64_t ${getdpicFunc(constName)}() {
+       |  if(defaultFlag) return 0;
        |  assert(constantinMap.find("${constName}")!=constantinMap.end() && "${constName} not found in constantinMap");
        |  // output constantin different result
        |  static int a = -1;
@@ -188,14 +204,14 @@ object Constantin extends ConstantinParams {
   }
 
   def getTXT: String = {
-    recordMap.map({a => a._1 +" 0\n"}).foldLeft("")(_ + _)
+    initMap.map({a => a._1 + s" ${a._2.litValue}\n"}).foldLeft("")(_ + _)
   }
 
   def addToFileRegisters = {
     FileRegisters.add(s"${objectName}.hpp", getCHeader)
-    if(AutoSolving) {
+    if (AutoSolving) {
       FileRegisters.add(s"${objectName}.cpp", getPreProcessFromStdInCpp)
-    }else {
+    } else {
       FileRegisters.add(s"${objectName}.cpp", getPreProcessCpp)
     }
     FileRegisters.add(s"${objectName}.txt", getTXT)
