@@ -124,7 +124,19 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
          |  };
          |}
          |""".stripMargin
-    (init, insert)
+    val init_dummy =
+      s"""
+         |void init_db_$tableName() {}
+         |""".stripMargin
+    val insert_dummy = 
+      s""" 
+         |extern "C" void ${tableName}_write(
+         |  ${cols.map(c => "uint64_t " + c).mkString("", ",\n  ", ",")}
+         |  uint64_t stamp,
+         |  char * site
+         |) {}
+         |""".stripMargin
+    if (envInFPGA) (init_dummy, insert_dummy) else (init, insert)
   }
 
   def log(data: T, en: Bool, site: String = "", clock: Clock, reset: Reset): Unit = {
