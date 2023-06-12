@@ -128,8 +128,8 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
       s"""
          |void init_db_$tableName() {}
          |""".stripMargin
-    val insert_dummy = 
-      s""" 
+    val insert_dummy =
+      s"""
          |extern "C" void ${tableName}_write(
          |  ${cols.map(c => "uint64_t " + c).mkString("", ",\n  ", ",")}
          |  uint64_t stamp,
@@ -229,12 +229,7 @@ object ChiselDB {
   }
 
   def createTable[T <: Record](tableName: String, hw: T, basicDB: Boolean = this.enable): Table[T] = {
-    table_map
-      .get(tableName)
-      .map(old => {
-        require(old.getClass.equals(hw.getClass), s"table name conflict: $tableName")
-        old.asInstanceOf[Table[T]]
-      })
+    getTable(tableName, hw)
       .getOrElse({
         val t = new Table[T](!basicDB, tableName, hw)
         table_map += (tableName -> t)
@@ -244,6 +239,16 @@ object ChiselDB {
 
   def getTable(tableName: String): Option[Table[_]] = {
     table_map.get(tableName)
+  }
+
+  def getTable[T <: Record](tableName: String, hw: T): Option[Table[T]] = {
+    table_map
+      .get(tableName)
+      .map(old => {
+        require(old.hw.getClass.equals(hw.getClass), s"table name conflict: $tableName" +
+          s" with different hw types of ${old.hw.getClass} and ${hw.getClass}")
+        old.asInstanceOf[Table[T]]
+      })
   }
 
   def getCHeader: String = {
