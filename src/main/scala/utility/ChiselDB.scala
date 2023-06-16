@@ -124,7 +124,19 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
          |  };
          |}
          |""".stripMargin
-    (init, insert)
+    val init_dummy =
+      s"""
+         |void init_db_$tableName() {}
+         |""".stripMargin
+    val insert_dummy = 
+      s""" 
+         |extern "C" void ${tableName}_write(
+         |  ${cols.map(c => "uint64_t " + c).mkString("", ",\n  ", ",")}
+         |  uint64_t stamp,
+         |  char * site
+         |) {}
+         |""".stripMargin
+    if (envInFPGA) (init_dummy, insert_dummy) else (init, insert)
   }
 
   def log(data: T, en: Bool, site: String = "", clock: Clock, reset: Reset): Unit = {
@@ -209,14 +221,14 @@ private class TableWriteHelper[T <: Record](tableName: String, hw: T, site: Stri
 object ChiselDB {
 
   private val table_map = scala.collection.mutable.Map[String, Table[_]]()
-  private var envInFPGA = false
+  private var enable = false
 
-  def init(envInFPGA: Boolean): Unit = {
+  def init(enable: Boolean): Unit = {
     // Not needed at the moment
-    this.envInFPGA = envInFPGA
+    this.enable = enable
   }
 
-  def createTable[T <: Record](tableName: String, hw: T): Table[T] = {
+  def createTable[T <: Record](tableName: String, hw: T, basicDB: Boolean = this.enable): Table[T] = {
     table_map
       .get(tableName)
       .map(old => {
@@ -224,7 +236,7 @@ object ChiselDB {
         old.asInstanceOf[Table[T]]
       })
       .getOrElse({
-        val t = new Table[T](this.envInFPGA, tableName, hw)
+        val t = new Table[T](!basicDB, tableName, hw)
         table_map += (tableName -> t)
         t
       })
