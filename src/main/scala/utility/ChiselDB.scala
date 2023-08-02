@@ -87,6 +87,8 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
       s"""
          |void init_db_$tableName() {
          |  // create table
+         |  if (!enable_dump_$tableName) return;
+         |
          |  char * sql = "CREATE TABLE $tableName(" \\
          |    "ID INTEGER PRIMARY KEY AUTOINCREMENT," \\
          |    ${cols.map(c => "\"" + c.toUpperCase + " INT NOT NULL,\" \\").mkString("", "\n    ", "")}
@@ -108,7 +110,8 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
          |  uint64_t stamp,
          |  char * site
          |) {
-         |  if(!dump) return;
+         |  if(!dump || !enable_dump_$tableName) return;
+         |
          |  char * format = "INSERT INTO $tableName(${cols.map(_.toUpperCase).mkString(",")}, STAMP, SITE) " \\
          |                  "VALUES(${cols.map(_ => "%ld").mkString(", ")}, %ld, '%s');";
          |  char * sql = (char *)malloc(${cols.size + 1} * sizeof(uint64_t) + (strlen(format)+strlen(site)) * sizeof(char));
@@ -265,7 +268,7 @@ object ChiselDB {
       |#include <unistd.h>
       |#include <sqlite3.h>
       |
-      |void init_db(bool en);
+      |void init_db(bool en, bool select_enable, const char *select_db);
       |void save_db(const char * filename);
       |
       |#endif
@@ -295,13 +298,39 @@ object ChiselDB {
 
     val (tables_init, tables_insert) = table_map.values.map(_.genCpp).unzip
 
+    def select_enable_assign(str: String) =
+      s"""
+         |    {
+         |      char table_name[] = "$str";
+         |      for (int idx = 0; idx < select_db_num; idx++) {
+         |        char *str_p = select_db_list[idx];
+         |        int s_idx = 0;
+         |        bool match = true;
+         |        for (; (str_p[s_idx] != '\\0') && (table_name[s_idx] != '\\0'); s_idx ++) {
+         |          if (str_p[s_idx] != table_name[s_idx]) {
+         |            match = false;
+         |            break;
+         |          }
+         |        }
+         |        if (!match || (str_p[s_idx] != '\\0'))  continue;
+         |
+         |        enable_dump_$str = true;
+         |        break;
+         |      }
+         |    }
+         |""".stripMargin
+
     s"""
        |#include"chisel_db.h"
+       |#include <string.h>
+       |#include <stdbool.h>
        |
        |bool dump;
        |sqlite3 *mem_db;
        |char * zErrMsg;
        |int rc;
+       |
+       |${table_map.keys.map(t => "bool enable_dump_" + t + " = true;\n").mkString("","\n","\n")}
        |
        |static int callback(void *NotUsed, int argc, char **argv, char **azColName){
        |  return 0;
@@ -310,7 +339,7 @@ object ChiselDB {
        |${tables_init.mkString("  ", "\n  ", "\n")}
        |${tables_insert.mkString("  ", "\n  ", "\n")}
        |
-       |void init_db(bool en){
+       |void init_db(bool en, bool select_enable, const char *select_db){
        |  dump = en;
        |  if(!en) return;
        |  rc = sqlite3_open(":memory:", &mem_db);
@@ -320,9 +349,29 @@ object ChiselDB {
        |  } else {
        |    printf("Open database successfully\\n");
        |  }
-       |${table_map.keys.map(t => "init_db_" + t + "();").mkString("  ", "\n  ", "\n")}
-       |}
        |
+       |  if (select_enable) {
+       |    char *select_db_list[256];
+       |    int select_db_num = 0;
+       |
+       |    const char *split_word = " ";
+       |    char select_db_copy[1024];
+       |    select_db_copy[0] = '\\0';
+       |    strncpy(select_db_copy, select_db, 1024);
+       |    select_db_copy[1023] = '\\0';
+       |    char *str_p = strtok(select_db_copy, split_word);
+       |    while (str_p) {
+       |      select_db_list[select_db_num] = str_p;
+       |      select_db_num ++;
+       |      str_p = strtok(NULL, split_word);
+       |    }
+       |${table_map.keys.map(t => "    enable_dump_" + t + " = false;").mkString("\n")}
+       |${table_map.keys.map(t => select_enable_assign(t)).mkString("\n")}
+       |  }
+       |
+       |${table_map.keys.map(t => "  init_db_" + t + "();").mkString("\n")}
+       |
+       |}
        |$save
        |
        |""".stripMargin
