@@ -116,6 +116,7 @@ object OneHot {
   def UIntToOH1(x: UInt): UInt = UIntToOH1(x, (1 << x.getWidth) - 1)
   def checkOneHot(in: Bits): Unit = assert(PopCount(in) <= 1.U)
   def checkOneHot(in: Iterable[Bool]): Unit = assert(PopCount(in) <= 1.U)
+  def OHToUIntStartOne(in: UInt): UInt = OHToUInt(in << 1)
 }
 
 object LowerMask {
