@@ -18,7 +18,7 @@ package utility
 
 import chisel3._
 import chisel3.util._
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util.BundleMap
@@ -76,14 +76,14 @@ object TLLogger {
     for ((name, data) <- log.elements.filterNot(_._1 == "data")) {
       val e = chn.elements.find(_._1 == name)
       if (e.nonEmpty) {
-        data := e.get._2.asUInt()
+        data := e.get._2.asUInt
       } else {
         data := 0.U
       }
     }
     def bmp_to_uint(bmp: BundleMap): UInt = {
       if(bmp.fields.nonEmpty){
-        bmp.asUInt()
+        bmp.asUInt
       } else {
         0.U
       }
@@ -150,26 +150,26 @@ object TLLogger {
       writer.io.valid := wen
     }
 
-    connect(a_writer, a_log, in.a.fire())
-    connect(b_writer, b_log, in.b.fire())
-    connect(c_writer, c_log, in.c.fire())
-    connect(d_writer, d_log, in.d.fire())
+    connect(a_writer, a_log, in.a.fire)
+    connect(b_writer, b_log, in.b.fire)
+    connect(c_writer, c_log, in.c.fire)
+    connect(d_writer, d_log, in.d.fire)
 
-    when(in.a.fire()) {
+    when(in.a.fire) {
       logA(a_log, in.a.bits)
       a_d_addrs(in.a.bits.source) := in.a.bits.address
     }
 
-    when(in.b.fire()) {
+    when(in.b.fire) {
       logB(b_log, in.b.bits)
     }
 
-    when(in.c.fire()) {
+    when(in.c.fire) {
       logC(c_log, in.c.bits)
       c_d_addrs(in.c.bits.source) := in.c.bits.address
     }
 
-    when(in.d.fire()) {
+    when(in.d.fire) {
       val a_d = a_d_addrs(in.d.bits.source)
       val c_d = c_d_addrs(in.d.bits.source)
       val addr = Mux(in.d.bits.opcode === TLMessages.ReleaseAck, c_d, a_d)
