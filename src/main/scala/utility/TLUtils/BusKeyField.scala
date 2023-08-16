@@ -21,8 +21,7 @@ import chisel3.util._
 import freechips.rocketchip.util._
 
 // indicates where the memory access request comes from
-// a dupliacte of this is in Xiangshan.package and HuanCun.common
-object MemReqSource_internal extends Enumeration {
+object MemReqSource extends Enumeration {
   val NoWhere = Value("NoWhere")
 
   val CPUInst = Value("CPUInst")
@@ -42,9 +41,9 @@ object MemReqSource_internal extends Enumeration {
 case object ReqSourceKey extends ControlKey[UInt]("reqSource")
 
 case class ReqSourceField() extends BundleField(ReqSourceKey) {
-  override def data: UInt = Output(UInt(MemReqSource_internal.reqSourceBits.W))
+  override def data: UInt = Output(UInt(MemReqSource.reqSourceBits.W))
 
   override def default(x: UInt): Unit = {
-    x := MemReqSource_internal.NoWhere.id.U(MemReqSource_internal.reqSourceBits.W)
+    x := MemReqSource.NoWhere.id.U(MemReqSource.reqSourceBits.W)
   }
 }
