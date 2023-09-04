@@ -41,10 +41,6 @@ object MemReqSource_internal extends Enumeration {
 // Used to indicate the source of the req (L1I/L1D/PTW)
 case object ReqSourceKey extends ControlKey[UInt]("reqSource")
 
-case class ReqSourceField() extends BundleField(ReqSourceKey) {
-  override def data: UInt = Output(UInt(MemReqSource_internal.reqSourceBits.W))
-
-  override def default(x: UInt): Unit = {
-    x := MemReqSource_internal.NoWhere.id.U(MemReqSource_internal.reqSourceBits.W)
-  }
-}
+case class ReqSourceField() extends BundleField[UInt](ReqSourceKey, Output(UInt(MemReqSource_internal.reqSourceBits.W)), x =>
+  x := MemReqSource_internal.NoWhere.id.U(MemReqSource_internal.reqSourceBits.W)
+)
