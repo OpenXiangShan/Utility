@@ -41,7 +41,7 @@ object ExcitingUtils {
     var sourceModule: Option[String] = None,
     var sinkModule: Option[String] = None,
     var warned: Boolean = false
-  ){
+  ) {
 
     override def toString: String =
       s"type:[$connType] source location:[${sourceModule.getOrElse(strToErrorMsg("Not Found"))}]" +
@@ -52,27 +52,36 @@ object ExcitingUtils {
 
   private val map = mutable.LinkedHashMap[String, Connection]()
 
+  private val topWire: mutable.Map[String, Data] = mutable.Map()
+
+  private var sources: mutable.Map[String, Data] = mutable.Map()
+
+  def register(map: Map[String, Data]): Unit = {
+    require(topWire.isEmpty, "[Error] ExcitingUtils can only register once")
+    map.foreach { case (name, dataType) =>
+      topWire.update(name, WireDefault(0.U.asTypeOf(dataType)))
+    }
+  }
+
   def addSource
   (
-    component: NamedComponent,
+    component: Data,
     name: String,
     connType: ConnectionType = Func,
     disableDedup: Boolean = false,
     uniqueName: Boolean = false
-  ): String = {
+  ): Unit = {
     val conn = map.getOrElseUpdate(name, new Connection(connType))
-    if (!conn.sourceModule.isEmpty && !conn.warned) {
-      println(s"[WARN] Signal |$name| has multiple sources")
-      conn.warned = true
-    }
-    require(conn.connType == connType)
+    require(conn.sourceModule.isEmpty, s"[ERROR] Signal |$name| has multiple sources")
+    require(conn.connType == connType, s"[ERROR] Signal |$name| has conflict connection type")
+    require(topWire.exists(_._1 == name), s"[ERROR] Signal |$name| not registered")
     conn.sourceModule = Some(component.parentModName)
-    BoringUtils.addSource(component, name, disableDedup, uniqueName)
+    sources.update(name, component)
   }
 
   def addSink
   (
-    component: InstanceId,
+    component: Data,
     name: String,
     connType: ConnectionType = Func,
     disableDedup: Boolean = false,
@@ -83,33 +92,22 @@ object ExcitingUtils {
       println(s"[WARN] Signal |$name| has multiple sinks")
       conn.warned = true
     }
-    require(conn.connType == connType)
+    require(conn.connType == connType, s"[ERROR] Signal |$name| has conflict connection type")
+    require(topWire.exists(_._1 == name), s"[ERROR] Signal |$name| not registered")
     conn.sinkModule = Some(component.parentModName)
-    BoringUtils.addSink(component, name, disableDedup, forceExists)
+    component := BoringUtils.bore(topWire(name))
   }
 
-  def fixConnections(): Unit ={
-    val dontCare = WireInit(0.U)
-    for((name, conn) <- map){
-      if(conn.sinkModule.isEmpty){
-        addSink(dontCare, name, conn.connType)
-      }
-      if(conn.sourceModule.isEmpty){
-        addSource(dontCare, name, conn.connType)
-      }
-    }
-  }
-
-
-  def checkAndDisplay(): Unit = {
+  def connectAndDisplay(): Unit = {
     var legal = true
     val buf = new mutable.StringBuilder()
-    for((id, conn) <- map){
-      buf ++= s"Connection:[$id] $conn\n"
-      if(!conn.isLegalConnection) legal = false
+    for ((name, conn) <- map){
+      buf ++= s"Connection:[$name] $conn\n"
+      if (!conn.isLegalConnection) legal = false
+      else topWire(name) := BoringUtils.bore(sources(name))
     }
     print(buf)
-    require(legal, strToErrorMsg("Error: Illegal connection found!"))
+    // require(legal, strToErrorMsg("Error: Illegal connection found!"))
   }
 
 }
