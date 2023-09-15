@@ -32,6 +32,7 @@ class ResetGen(SYNC_NUM: Int = 2) extends Module {
 trait ResetNode
 
 case class ModuleNode(mod: Module) extends ResetNode
+case class CellNode(reset: Reset) extends ResetNode
 
 case class ResetGenNode(children: Seq[ResetNode]) extends ResetNode
 
@@ -46,6 +47,8 @@ object ResetGen {
       resetTree match {
         case ModuleNode(mod) =>
           mod.reset := reset
+        case CellNode(r) =>
+          r := reset
         case ResetGenNode(children) =>
           val next_rst = Wire(Reset())
           withReset(reset){

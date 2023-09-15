@@ -21,8 +21,7 @@ import chisel3.util._
 import freechips.rocketchip.util._
 
 // indicates where the memory access request comes from
-// a dupliacte of this is in Xiangshan.package and HuanCun.common
-object MemReqSource_internal extends Enumeration {
+object MemReqSource extends Enumeration {
   val NoWhere = Value("NoWhere")
 
   val CPUInst = Value("CPUInst")
@@ -32,7 +31,13 @@ object MemReqSource_internal extends Enumeration {
   val L1InstPrefetch = Value("L1InstPrefetch")
   val L1DataPrefetch = Value("L1DataPrefetch")
   val PTW = Value("PTW")
-  val L2Prefetch = Value("L2Prefetch")
+  val Prefetch2L2BOP = Value("Prefetch2L2BOP")
+  val Prefetch2L2SMS = Value("Prefetch2L2SMS")
+  val Prefetch2L2Stream = Value("Prefetch2L2Stream")
+  val Prefetch2L2Stride = Value("Prefetch2L2Stride")
+  val Prefetch2L2TP = Value("Prefetch2L2TP")
+  val Prefetch2L2Unknown = Value("Prefetch2L2Unknown")
+  val Prefetch2L3Unknown = Value("Prefetch2L3Unknown")
   val ReqSourceCount = Value("ReqSourceCount")
 
   val reqSourceBits = log2Ceil(ReqSourceCount.id)
@@ -41,6 +46,6 @@ object MemReqSource_internal extends Enumeration {
 // Used to indicate the source of the req (L1I/L1D/PTW)
 case object ReqSourceKey extends ControlKey[UInt]("reqSource")
 
-case class ReqSourceField() extends BundleField[UInt](ReqSourceKey, Output(UInt(MemReqSource_internal.reqSourceBits.W)), x =>
-  x := MemReqSource_internal.NoWhere.id.U(MemReqSource_internal.reqSourceBits.W)
+case class ReqSourceField() extends BundleField[UInt](ReqSourceKey, Output(UInt(MemReqSource.reqSourceBits.W)), x =>
+  x := MemReqSource.NoWhere.id.U(MemReqSource.reqSourceBits.W)
 )
