@@ -89,7 +89,7 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
          |  // create table
          |  if (!enable_dump_$tableName) return;
          |
-         |  char * sql = "CREATE TABLE $tableName(" \\
+         |  const char *sql = "CREATE TABLE $tableName(" \\
          |    "ID INTEGER PRIMARY KEY AUTOINCREMENT," \\
          |    ${cols.map(c => "\"" + c.toUpperCase + " INT NOT NULL,\" \\").mkString("", "\n    ", "")}
          |    "STAMP INT NOT NULL," \\
@@ -108,13 +108,13 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
          |extern "C" void ${tableName}_write(
          |  ${cols.map(c => "uint64_t " + c).mkString("", ",\n  ", ",")}
          |  uint64_t stamp,
-         |  char * site
+         |  char *site
          |) {
          |  if(!dump || !enable_dump_$tableName) return;
          |
-         |  char * format = "INSERT INTO $tableName(${cols.map(_.toUpperCase).mkString(",")}, STAMP, SITE) " \\
+         |  const char *format = "INSERT INTO $tableName(${cols.map(_.toUpperCase).mkString(",")}, STAMP, SITE) " \\
          |                  "VALUES(${cols.map(_ => "%ld").mkString(", ")}, %ld, '%s');";
-         |  char * sql = (char *)malloc(${cols.size + 1} * sizeof(uint64_t) + (strlen(format)+strlen(site)) * sizeof(char));
+         |  char *sql = (char *)malloc(${cols.size + 1} * sizeof(uint64_t) + (strlen(format)+strlen(site)) * sizeof(char));
          |  sprintf(sql,
          |    format,
          |    ${cols.mkString(",")}, stamp, site
@@ -136,7 +136,7 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
          |extern "C" void ${tableName}_write(
          |  ${cols.map(c => "uint64_t " + c).mkString("", ",\n  ", ",")}
          |  uint64_t stamp,
-         |  char * site
+         |  char *site
          |) {}
          |""".stripMargin
     if (envInFPGA) (init_dummy, insert_dummy) else (init, insert)
@@ -269,7 +269,7 @@ object ChiselDB {
       |#include <sqlite3.h>
       |
       |void init_db(bool en, bool select_enable, const char *select_db);
-      |void save_db(const char * filename);
+      |void save_db(const char *filename);
       |
       |#endif
       |""".stripMargin
@@ -301,7 +301,7 @@ object ChiselDB {
     def select_enable_assign(str: String) =
       s"""
          |    {
-         |      char table_name[] = "$str";
+         |      const char *table_name = "$str";
          |      for (int idx = 0; idx < select_db_num; idx++) {
          |        char *str_p = select_db_list[idx];
          |        int s_idx = 0;
@@ -327,7 +327,7 @@ object ChiselDB {
        |
        |bool dump;
        |sqlite3 *mem_db;
-       |char * zErrMsg;
+       |char *zErrMsg;
        |int rc;
        |
        |${table_map.keys.map(t => "bool enable_dump_" + t + " = true;\n").mkString("","\n","\n")}
