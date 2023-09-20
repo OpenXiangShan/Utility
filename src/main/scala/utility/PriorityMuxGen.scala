@@ -18,16 +18,14 @@ package utility
 
 import chisel3._
 import chisel3.util._
-import Chisel.experimental.chiselName
 
-@chiselName
-class PriorityMuxModule[T <: Data](val gen: T)(val names: Seq[String]) extends MultiIOModule {
+class PriorityMuxModule[T <: Data](val gen: T)(val names: Seq[String]) extends Module {
     class InBundle extends Bundle {
         val sel = Bool()
-        val src = gen.cloneType
+        val src = chiselTypeOf(gen)
     }
     class OutBundle extends Bundle {
-        val res = gen.cloneType
+        val res = chiselTypeOf(gen)
     }
     val ins = names.map(s => {
         IO(Input(new InBundle)).suggestName(s)
