@@ -3,8 +3,8 @@ import scalalib._
 import scalafmt._
 
 val defaultVersions = Map(
-  "chisel3" -> "3.5.0",
-  "chisel3-plugin" -> "3.5.0",
+  "chisel3" -> "3.5.4",
+  "chisel3-plugin" -> "3.5.4",
   "chiseltest" -> "0.3.2",
   "scala" -> "2.12.13",
   "scalatest" -> "3.2.7"
@@ -41,8 +41,8 @@ object `rocket-chip` extends SbtModule with CommonModule {
 
   object macros extends SbtModule with CommonModule
 
-  object `api-config-chipsalliance` extends CommonModule {
-    override def millSourcePath = super.millSourcePath / "design" / "craft"
+  object cde extends CommonModule {
+    override def millSourcePath = super.millSourcePath / "cde" / "cde"
   }
 
   object hardfloat extends SbtModule with CommonModule {
@@ -50,7 +50,7 @@ object `rocket-chip` extends SbtModule with CommonModule {
   }
 
   override def moduleDeps = super.moduleDeps ++ Seq(
-    `api-config-chipsalliance`, macros, hardfloat
+    cde, macros, hardfloat
   )
 
 }
