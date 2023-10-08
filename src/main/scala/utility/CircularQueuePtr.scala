@@ -16,7 +16,7 @@
 
 package utility
 
-import chipsalliance.rocketchip.config.Parameters
+import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
 
@@ -130,4 +130,3 @@ class QPtrMatchMatrix[T <: CircularQueuePtr[T]](left: Seq[T], right: Seq[T]) {
   }
   def apply(leftIndex: Int): Seq[Bool] = right.indices.map(i => apply(leftIndex, i))
 }
-
