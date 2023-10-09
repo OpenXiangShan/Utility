@@ -3,10 +3,10 @@ import scalalib._
 import scalafmt._
 
 val defaultVersions = Map(
-  "chisel3" -> "3.5.4",
-  "chisel3-plugin" -> "3.5.4",
+  "chisel3" -> "3.6.0",
+  "chisel3-plugin" -> "3.6.0",
   "chiseltest" -> "0.3.2",
-  "scala" -> "2.12.13",
+  "scala" -> "2.13.10",
   "scalatest" -> "3.2.7"
 )
 
@@ -20,14 +20,6 @@ def getVersion(dep: String, org: String = "edu.berkeley.cs", cross: Boolean = fa
 
 trait CommonModule extends ScalaModule {
   override def scalaVersion = defaultVersions("scala")
-
-  override def scalacOptions = Seq("-Xsource:2.11")
-
-  val macroParadise = ivy"org.scalamacros:::paradise:2.1.1"
-
-  override def compileIvyDeps = Agg(macroParadise)
-  override def scalacPluginIvyDeps = Agg(macroParadise)
-
 }
 
 
