@@ -337,6 +337,20 @@ class CenterSelectOne(bits: Seq[Bool], max_sel: Int = -1) extends SelectOne {
   }
 }
 
+class RandomSelectOne(bits: Seq[Bool], max_sel: Int = -1) extends SelectOne {
+  val n_bits = bits.length
+  require(n_bits > 0)
+  val shiftedBitsVec = VecInit((bits ++ bits).sliding(n_bits).take(n_bits).map(x => VecInit(x)).toSeq)
+  val shiftedNum = Counter(true.B, n_bits)._1
+  val select = new NaiveSelectOne(shiftedBitsVec(shiftedNum), max_sel)
+
+  def getNthOH(n: Int): (Bool, Vec[Bool]) = {
+    val selected = select.getNthOH(n)
+    val shiftedBackOH = VecInit((selected._2 ++ selected._2).sliding(n_bits).toSeq.reverse.take(n_bits).map(x => VecInit(x)))
+    (selected._1, shiftedBackOH(shiftedNum))
+  }
+}
+
 object SelectOne {
   def apply(policy: String, bits: Seq[Bool], max_sel: Int = -1): SelectOne = {
     policy.toLowerCase match {
@@ -344,6 +358,7 @@ object SelectOne {
       case "circ" => new CircSelectOne(bits, max_sel)
       case "oddeven" => new OddEvenSelectOne(bits, max_sel)
       case "center" => new CenterSelectOne(bits, max_sel)
+      case "random" => new RandomSelectOne(bits, max_sel)
       case _ => throw new IllegalArgumentException(s"unknown select policy")
     }
   }
