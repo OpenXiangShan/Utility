@@ -177,7 +177,7 @@ class FoldedSRAMTemplate[T <: Data](gen: T, set: Int, width: Int = 4, way: Int =
   val nRows = set / width
 
   val array = Module(new SRAMTemplate(gen, set=nRows, way=width*way,
-    shouldReset=shouldReset, extraReset=extraReset, holdRead=holdRead, singlePort=singlePort))
+    shouldReset=shouldReset, extraReset=extraReset, holdRead=holdRead, singlePort=singlePort, bypassWrite=bypassWrite))
   if (array.extra_reset.isDefined) {
     array.extra_reset.get := extra_reset.get
   }
