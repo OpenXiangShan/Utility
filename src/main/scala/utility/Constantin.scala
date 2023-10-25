@@ -175,6 +175,7 @@ object Constantin extends ConstantinParams {
        |extern map<string, uint64_t> constantinMap;
        |
        |void constantinLoad() {
+       |  constantinInit();
        |  uint64_t num;
        |  string tmp;
        |  uint64_t total_num;
