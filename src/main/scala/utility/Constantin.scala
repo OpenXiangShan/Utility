@@ -120,6 +120,7 @@ object Constantin extends ConstantinParams {
     s"""
        |#include <map>
        |#include <string>
+       |#include <stdint.h>
        |using namespace std;
        |
        |map<string, uint64_t> constantinMap;
@@ -228,3 +229,4 @@ object Constantin extends ConstantinParams {
   }
 
 }
+
