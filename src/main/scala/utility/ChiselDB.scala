@@ -205,7 +205,7 @@ private class TableWriteHelper[T <: Record](tableName: String, hw: T, site: Stri
        |${verilogModulePorts.mkString("  ", ",\n  ", ",")}
        |  input [63:0] stamp
        |);
-       |  parameter string site;
+       |  parameter string site = "undefined";
        |
        |  always@(posedge clock) begin
        |    if(en && !reset) begin
