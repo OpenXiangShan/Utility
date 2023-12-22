@@ -45,10 +45,10 @@ private class SignalReadHelper(constName: String) extends BlackBox with HasBlack
        |import "DPI-C" function longint $dpicFunc();
        |
        |module $moduleName(
-       |  output [$UIntWidth - 1:0] value
+       |  output reg [$UIntWidth - 1:0] value
        |);
        |
-       |  assign value = $dpicFunc();
+       |  initial value = $dpicFunc();
        |endmodule
        |""".stripMargin
   setInline(s"$moduleName.v", verilog)
