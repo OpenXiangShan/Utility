@@ -49,11 +49,15 @@ class SRAMBundleAW[T <: Data](private val gen: T,
   val way: Int = 1,
   val useBitmask: Boolean = false
 ) extends SRAMBundleA(set) {
+
   private val dataWidth = gen.getWidth
+
   val data: Vec[T] = Output(Vec(way, gen))
   val waymask: Option[UInt] = if (way > 1) Some(Output(UInt(way.W))) else None
-  val bitmask: Option[UInt] = if (useBitmask) Some(Output(UInt((way * dataWidth).W))) else None
-  val raw_bitmask: Option[UInt] = if (useBitmask) Some(Output(UInt((dataWidth).W))) else None
+  // flattened_bitmask is the flattened form of [waymask, bitmask], can be use directly to mask memory
+  val flattened_bitmask: Option[UInt] = if (useBitmask) Some(Output(UInt((way * dataWidth).W))) else None
+  // bitmask is the original bitmask passed from parameter
+  val bitmask: Option[UInt] = if (useBitmask) Some(Output(UInt((dataWidth).W))) else None
 
   def apply(data: Vec[T], setIdx: UInt, waymask: UInt): SRAMBundleAW[T] = {
     require(waymask.getWidth == way,
@@ -66,11 +70,12 @@ class SRAMBundleAW[T <: Data](private val gen: T,
 
   def apply(data: Vec[T], setIdx: UInt, waymask: UInt, bitmask: UInt): SRAMBundleAW[T] = {
     require(useBitmask, "passing bitmask when not using bitmask")
-    require(bitmask.getWidth == dataWidth, "bitmask width does not equal data width")
+    require(bitmask.getWidth == dataWidth,
+      s"bitmask width does not equal data width, bitmask width: ${bitmask.getWidth}, data width: ${dataWidth}")
     apply(data, setIdx, waymask)
-    this.bitmask.foreach(_ :=
+    this.flattened_bitmask.foreach(_ :=
       VecInit.tabulate(way * dataWidth)(n => waymask(n / dataWidth) && bitmask(n % dataWidth)).asUInt)
-    this.raw_bitmask.foreach(_ := bitmask)
+    this.bitmask.foreach(_ := bitmask)
     this
   }
 
@@ -169,18 +174,21 @@ class SRAMTemplate[T <: Data](
   val setIdx = Mux(resetState, resetSet, io.w.req.bits.setIdx)
   val wdata = Mux(resetState, 0.U.asTypeOf(Vec(way, gen)), io.w.req.bits.data).
     asTypeOf(Vec(arrayPortSize, arrayType))
+
+  // Memeory write
   if (!useBitmask) {
     val waymask = Mux(resetState, Fill(way, "b1".U), io.w.req.bits.waymask.getOrElse("b1".U))
     when(wen) {
       array.write(setIdx, wdata, waymask.asBools)
     }
   } else {
-    val bitmask = Mux(resetState, Fill(way * gen.getWidth, "b1".U), io.w.req.bits.bitmask.getOrElse("b1".U))
+    val bitmask = Mux(resetState, Fill(way * gen.getWidth, "b1".U), io.w.req.bits.flattened_bitmask.getOrElse("b1".U))
     when(wen) {
       array.write(setIdx, wdata, bitmask.asBools)
     }
   }
 
+  // Memory read
   val raw_rdata = array.read(io.r.req.bits.setIdx, realRen).asTypeOf(Vec(way, wordType))
   require(wdata.getWidth == raw_rdata.getWidth)
 
@@ -271,7 +279,7 @@ class FoldedSRAMTemplate[T <: Data](
   require(wmask.getWidth == way*width)
 
   if (useBitmask) {
-    array.io.w.apply(wen, wdata, waddr, wmask, io.w.req.bits.raw_bitmask.get)
+    array.io.w.apply(wen, wdata, waddr, wmask, io.w.req.bits.bitmask.get)
   } else {
     array.io.w.apply(wen, wdata, waddr, wmask)
   }
