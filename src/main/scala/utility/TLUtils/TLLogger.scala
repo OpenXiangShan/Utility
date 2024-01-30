@@ -44,12 +44,12 @@ class TLLog extends Bundle with HasCLikeTypes {
   val echo = uint64_t
 }
 
-class TLLogWriter(prefix: String) extends Module {
+class TLLogWriter(prefix: String, siteNeedId: Boolean) extends Module {
   val io = IO(Flipped(ValidIO(new TLLog)))
-  TLLogger.table.log(io, prefix, this.clock, this.reset)
+  TLLogger.table.log(io, prefix, this.clock, this.reset, siteNeedId)
 }
 
-class TLLogger(name: String)(implicit p: Parameters) extends LazyModule {
+class TLLogger(name: String, val siteNeedId: Boolean)(implicit p: Parameters) extends LazyModule {
   val node = TLAdapterNode()
   lazy val module = new TLLoggerImp(this, name)
 }
@@ -58,7 +58,7 @@ class TLLoggerImp(outer: TLLogger, name: String) extends LazyModuleImp(outer) {
   val node = outer.node
   for (((in, edgeIn), (out, edgeOut)) <- node.in.zip(node.out)) {
     out <> in
-    TLLogger.track(in, edgeIn, this.clock, this.reset)(name)
+    TLLogger.track(in, edgeIn, this.clock, this.reset, outer.siteNeedId)(name)
   }
 }
 
@@ -127,7 +127,7 @@ object TLLogger {
     log.data := d.data.asTypeOf(log.data)
   }
 
-  def track(in: TLBundle, edge: TLEdgeIn, clock: Clock, reset: Reset)(name: String) = {
+  def track(in: TLBundle, edge: TLEdgeIn, clock: Clock, reset: Reset, siteNeedId: Boolean)(name: String) = {
     val numClients = edge.client.endSourceId
 
     // Acquire/Get -> Grant
@@ -135,7 +135,7 @@ object TLLogger {
     // Release -> ReleaseAck
     val c_d_addrs = Reg(Vec(numClients, UInt(edge.bundle.addressBits.W)))
     val a_log, b_log, c_log, d_log = WireInit(0.U.asTypeOf(new TLLog))
-    val a_writer, b_writer, c_writer, d_writer = Module(new TLLogWriter(name))
+    val a_writer, b_writer, c_writer, d_writer = Module(new TLLogWriter(name, siteNeedId))
 
     def connect(writer: TLLogWriter, log: TLLog, wen: Bool) = {
       writer.io.bits.channel := log.channel
@@ -178,9 +178,9 @@ object TLLogger {
 
   }
 
-  def apply(name: String, enable: Boolean = true)(implicit p: Parameters) = {
+  def apply(name: String, enable: Boolean = true, needHartId: Boolean = false)(implicit p: Parameters) = {
     if (enable) {
-      val logger = LazyModule(new TLLogger(name))
+      val logger = LazyModule(new TLLogger(name, needHartId))
       logger.node
     } else {
       TLTempNode()
