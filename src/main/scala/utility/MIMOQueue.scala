@@ -17,7 +17,8 @@
 package utility
 
 import chisel3._
-import chisel3.experimental.{DataMirror, requireIsChiselType}
+import chisel3.experimental.requireIsChiselType
+import chisel3.reflect.DataMirror
 import chisel3.util._
 
 class IndexableMem[T <: Data]
