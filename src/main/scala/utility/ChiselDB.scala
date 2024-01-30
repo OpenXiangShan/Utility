@@ -231,7 +231,7 @@ object ChiselDB {
     this.enable = enable
   }
 
-  def createTable[T <: Record](tableName: String, hw: T, basicDB: Boolean = false.B): Table[T] = {
+  def createTable[T <: Record](tableName: String, hw: T, basicDB: Boolean = false): Table[T] = {
     getTable(tableName, hw)
       .getOrElse({
         val t = new Table[T](!(basicDB & this.enable), tableName, hw)
