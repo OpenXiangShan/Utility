@@ -88,7 +88,7 @@ class PipelineConnectBufferWithExtraData[T <: Data, FlushT <: Data, ExtraT <: Da
 
   val extraData = Reg(Vec(2, extraGen.cloneType))
   for (i <- 0 until 2) {
-    when (RegNext(updateVec(i) && !flushVec(i))) {
+    when (GatedValidRegNext(updateVec(i) && !flushVec(i))) {
       extraData(i) := extra.in
     }
   }
