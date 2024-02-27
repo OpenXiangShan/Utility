@@ -26,3 +26,15 @@ object GatedValidRegNext {
     last
   }
 }
+
+object GatedValidRegNextN {
+  def apply(in: Bool, n: Int, initOpt: Option[Bool] = None): Bool = {
+    (0 until n).foldLeft(in){
+      (prev, _) =>
+        initOpt match {
+          case Some(init) => GatedValidRegNext(prev, init)
+          case None => GatedValidRegNext(prev)
+        }
+    }
+  }
+}
