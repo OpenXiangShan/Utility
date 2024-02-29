@@ -621,7 +621,7 @@ class FoldedSRAMTemplate[T <: Data]
   gen: T, set: Int, width: Int = 4, way: Int = 1,
   shouldReset: Boolean = false, extraReset: Boolean = false,
   holdRead: Boolean = false, singlePort: Boolean = false, bypassWrite: Boolean = false,
-  hasMbist:Boolean = true, hasShareBus:Boolean = false, parentName:String = "Unknown"
+  hasMbist:Boolean = true, hasShareBus:Boolean = true, parentName:String = "Unknown"
 ) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
