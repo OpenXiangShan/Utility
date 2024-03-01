@@ -102,3 +102,39 @@ object DelayN {
     delay.io.out
   }
 }
+
+class DelayNWithValid[T <: Data](gen: T, n: Int) extends Module{
+  val io = IO(new Bundle(){
+    val in_bits = Input(gen)
+    val in_valid = Input(Bool())
+    val out_bits = Output(gen)
+    val out_valid = Output(Bool())
+  })
+  val (res_valid,res_bits) = (0 until n).foldLeft((io.in_valid,io.in_bits)){
+    (prev, _) =>
+      val valid = RegNext(prev._1,init = false.B)
+      val data = RegEnable(prev._2,prev._1)
+      (valid,data)
+  }
+  io.out_valid := res_valid
+  io.out_bits := res_bits
+}
+
+object DelayNWithValid{
+  def apply[T <: Data](in: T, valid:Bool, n: Int): (Bool,T) = {
+    val pipMod = Module(new DelayNWithValid(in.cloneType,n))
+    pipMod.io.in_valid := valid
+    pipMod.io.in_bits := in
+    (pipMod.io.out_valid,pipMod.io.out_bits)
+  }
+
+  def apply[K <: Data,T <: Valid[K]](in: T, n: Int): T = {
+    val pipMod = Module(new DelayNWithValid(in.bits.cloneType,n))
+    pipMod.io.in_valid := in.valid
+    pipMod.io.in_bits := in.bits
+    val res = in.cloneType
+    res.valid := pipMod.io.out_valid
+    res.bits := pipMod.io.out_bits
+    res
+  }
+}
