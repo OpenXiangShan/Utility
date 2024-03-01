@@ -52,7 +52,7 @@ object MaskedRegMap { // TODO: add read mask
       if (w != null && wm != UnwritableMask) {
         // Warning: this RegMap adds a RegNext for write to reduce fanout
         // the w must be pure function without side effects
-        val wen_reg = RegNext(wen && waddr === a)
+        val wen_reg = GatedValidRegNext(wen && waddr === a)
         when (wen_reg) { r := w(MaskData(r, wdata_reg, wm)) }
       }
     }
