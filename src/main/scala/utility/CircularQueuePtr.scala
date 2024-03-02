@@ -106,6 +106,13 @@ trait HasCircularQueuePtrHelper {
       enq_ptr.entries.U + enq_ptr.value - deq_ptr.value)
   }
 
+  def hasFreeEntries[T <: CircularQueuePtr[T]](enq_ptr: T, deq_ptr: T): UInt = {
+    val free_deq_ptr = enq_ptr
+    val free_enq_ptr = WireInit(deq_ptr)
+    free_enq_ptr.flag := !deq_ptr.flag
+    distanceBetween(free_enq_ptr, free_deq_ptr)
+  }
+
   def isAfter[T <: CircularQueuePtr[T]](left: T, right: T): Bool = left > right
 
   def isBefore[T <: CircularQueuePtr[T]](left: T, right: T): Bool = left < right

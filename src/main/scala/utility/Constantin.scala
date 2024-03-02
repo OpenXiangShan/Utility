@@ -45,10 +45,10 @@ private class SignalReadHelper(constName: String) extends BlackBox with HasBlack
        |import "DPI-C" function longint $dpicFunc();
        |
        |module $moduleName(
-       |  output [$UIntWidth - 1:0] value
+       |  output reg [$UIntWidth - 1:0] value
        |);
        |
-       |  assign value = $dpicFunc();
+       |  initial value = $dpicFunc();
        |endmodule
        |""".stripMargin
   setInline(s"$moduleName.v", verilog)
@@ -71,10 +71,8 @@ class MuxModule[A <: Record](gen: A, n: Int) extends Module {
 * */
 
 object Constantin extends ConstantinParams {
-  // store init value => just UInt
-  private val initMap = scala.collection.mutable.Map[String, UInt]()
-  // store read value => initRead: UInt | fileRead: Wire(UInt)
-  private val recordMap = scala.collection.mutable.Map[String, UInt]()
+  // store init value => BigInt
+  private val initMap = scala.collection.mutable.Map[String, BigInt]()
   private val objectName = "constantin"
   private var enable = true
 
@@ -83,26 +81,14 @@ object Constantin extends ConstantinParams {
   }
 
   def createRecord(constName: String, initValue: UInt = 0.U): UInt = {
-    initMap += (constName -> initValue)
+    initMap(constName) = initValue.litValue
 
-    val t = WireInit(initValue.asTypeOf(UInt(UIntWidth.W)))
-    if (recordMap.contains(constName)) {
-      recordMap.getOrElse(constName, 0.U)
+    if (!this.enable) {
+      println(s"Constantin initRead: ${constName} = ${initValue.litValue}")
+      initValue.asTypeOf(UInt(UIntWidth.W))
     } else {
-      recordMap += (constName -> t)
-       if (!this.enable) {
-         println(s"Constantin initRead: ${constName} = ${initValue.litValue}")
-         recordMap.getOrElse(constName, 0.U)
-       } else {
-        val recordModule = Module(new SignalReadHelper(constName))
-        //recordModule.io.clock := Clock()
-        //recordModule.io.reset := Reset()
-        t := recordModule.io.value
-
-        // print record info
-        println(s"Constantin fileRead: ${constName} = ${initValue.litValue}")
-        t
-       }
+      println(s"Constantin fileRead: ${constName} = ${initValue.litValue}")
+      Module(new SignalReadHelper(constName)).suggestName(s"recordModule_${constName}").io.value
     }
   }
 
@@ -116,10 +102,11 @@ object Constantin extends ConstantinParams {
   }
 
   def getInitCpp: String = {
-    val initStr = initMap.map({ a => s"""  constantinMap["${a._1}"] = ${a._2.litValue};\n""" }).foldLeft("")(_ + _)
+    val initStr = initMap.map({ a => s"""  constantinMap["${a._1}"] = ${a._2};\n""" }).foldLeft("")(_ + _)
     s"""
        |#include <map>
        |#include <string>
+       |#include <stdint.h>
        |using namespace std;
        |
        |map<string, uint64_t> constantinMap;
@@ -211,7 +198,7 @@ object Constantin extends ConstantinParams {
   }
 
   def getTXT: String = {
-    initMap.map({a => a._1 + s" ${a._2.litValue}\n"}).foldLeft("")(_ + _)
+    initMap.map({a => a._1 + s" ${a._2}\n"}).foldLeft("")(_ + _)
   }
 
   def addToFileRegisters = {
@@ -222,9 +209,10 @@ object Constantin extends ConstantinParams {
     } else {
       cppContext += getPreProcessCpp
     }
-    cppContext += recordMap.map({a => getCpp(a._1)}).foldLeft("")(_ + _)
+    cppContext += initMap.map({a => getCpp(a._1)}).foldLeft("")(_ + _)
     FileRegisters.add(s"${objectName}.cpp", cppContext)
     FileRegisters.add(s"${objectName}.txt", getTXT)
   }
 
 }
+

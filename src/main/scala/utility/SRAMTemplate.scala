@@ -44,19 +44,49 @@ class SRAMBundleA(val set: Int) extends Bundle {
   }
 }
 
-class SRAMBundleAW[T <: Data](private val gen: T, set: Int, val way: Int = 1) extends SRAMBundleA(set) {
-  val data = Output(Vec(way, gen))
-  val waymask = if (way > 1) Some(Output(UInt(way.W))) else None
+class SRAMBundleAW[T <: Data](private val gen: T,
+  set: Int,
+  val way: Int = 1,
+  val useBitmask: Boolean = false
+) extends SRAMBundleA(set) {
+
+  private val dataWidth = gen.getWidth
+
+  val data: Vec[T] = Output(Vec(way, gen))
+  val waymask: Option[UInt] = if (way > 1) Some(Output(UInt(way.W))) else None
+  // flattened_bitmask is the flattened form of [waymask, bitmask], can be use directly to mask memory
+  val flattened_bitmask: Option[UInt] = if (useBitmask) Some(Output(UInt((way * dataWidth).W))) else None
+  // bitmask is the original bitmask passed from parameter
+  val bitmask: Option[UInt] = if (useBitmask) Some(Output(UInt((dataWidth).W))) else None
 
   def apply(data: Vec[T], setIdx: UInt, waymask: UInt): SRAMBundleAW[T] = {
+    require(waymask.getWidth == way,
+     s"waymask width does not equal nWays, waymask width: ${waymask.getWidth}, nWays: ${way}")
     super.apply(setIdx)
     this.data := data
-    this.waymask.map(_ := waymask)
+    this.waymask.foreach(_ := waymask)
     this
   }
+
+  def apply(data: Vec[T], setIdx: UInt, waymask: UInt, bitmask: UInt): SRAMBundleAW[T] = {
+    require(useBitmask, "passing bitmask when not using bitmask")
+    require(bitmask.getWidth == dataWidth,
+      s"bitmask width does not equal data width, bitmask width: ${bitmask.getWidth}, data width: ${dataWidth}")
+    apply(data, setIdx, waymask)
+    this.flattened_bitmask.foreach(_ :=
+      VecInit.tabulate(way * dataWidth)(n => waymask(n / dataWidth) && bitmask(n % dataWidth)).asUInt)
+    this.bitmask.foreach(_ := bitmask)
+    this
+  }
+
   // this could only be used when waymask is onehot or nway is 1
   def apply(data: T, setIdx: UInt, waymask: UInt): SRAMBundleAW[T] = {
     apply(VecInit(Seq.fill(way)(data)), setIdx, waymask)
+    this
+  }
+
+  def apply(data: T, setIdx: UInt, waymask: UInt, bitmask: UInt): SRAMBundleAW[T] = {
+    apply(VecInit(Seq.fill(way)(data)), setIdx, waymask, bitmask)
     this
   }
 }
@@ -76,16 +106,31 @@ class SRAMReadBus[T <: Data](private val gen: T, val set: Int, val way: Int = 1)
   }
 }
 
-class SRAMWriteBus[T <: Data](private val gen: T, val set: Int, val way: Int = 1) extends Bundle {
-  val req = Decoupled(new SRAMBundleAW(gen, set, way))
+class SRAMWriteBus[T <: Data](
+  private val gen: T, val set: Int,
+  val way: Int = 1, val useBitmask: Boolean = false
+) extends Bundle {
+  val req = Decoupled(new SRAMBundleAW(gen, set, way, useBitmask))
 
   def apply(valid: Bool, data: Vec[T], setIdx: UInt, waymask: UInt): SRAMWriteBus[T] = {
     this.req.bits.apply(data = data, setIdx = setIdx, waymask = waymask)
     this.req.valid := valid
     this
   }
+
+  def apply(valid: Bool, data: Vec[T], setIdx: UInt, waymask: UInt, bitmask: UInt): SRAMWriteBus[T] = {
+    this.req.bits.apply(data = data, setIdx = setIdx, waymask = waymask, bitmask = bitmask)
+    this.req.valid := valid
+    this
+  }
+
   def apply(valid: Bool, data: T, setIdx: UInt, waymask: UInt): SRAMWriteBus[T] = {
     apply(valid, VecInit(Seq.fill(way)(data)), setIdx, waymask)
+    this
+  }
+
+  def apply(valid: Bool, data: T, setIdx: UInt, waymask: UInt, bitmask: UInt): SRAMWriteBus[T] = {
+    apply(valid, VecInit(Seq.fill(way)(data)), setIdx, waymask, bitmask)
     this
   }
 }
@@ -93,16 +138,20 @@ class SRAMWriteBus[T <: Data](private val gen: T, val set: Int, val way: Int = 1
 class SRAMTemplate[T <: Data](
   gen: T, set: Int, way: Int = 1, singlePort: Boolean = false,
   shouldReset: Boolean = false, extraReset: Boolean = false,
-  holdRead: Boolean = false, bypassWrite: Boolean = false
+  holdRead: Boolean = false, bypassWrite: Boolean = false,
+  useBitmask: Boolean = false,
 ) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
-    val w = Flipped(new SRAMWriteBus(gen, set, way))
+    val w = Flipped(new SRAMWriteBus(gen, set, way, useBitmask))
   })
   val extra_reset = if (extraReset) Some(IO(Input(Bool()))) else None
 
   val wordType = UInt(gen.getWidth.W)
-  val array = SyncReadMem(set, Vec(way, wordType))
+  val arrayWidth = if (useBitmask) 1 else gen.getWidth
+  val arrayType = UInt(arrayWidth.W)
+  val arrayPortSize = if (useBitmask) way * gen.getWidth else way
+  val array = SyncReadMem(set, Vec(arrayPortSize, arrayType))
   val (resetState, resetSet) = (WireInit(false.B), WireInit(0.U))
 
   if (shouldReset) {
@@ -123,11 +172,25 @@ class SRAMTemplate[T <: Data](
   val realRen = (if (singlePort) ren && !wen else ren)
 
   val setIdx = Mux(resetState, resetSet, io.w.req.bits.setIdx)
-  val wdata = VecInit(Mux(resetState, 0.U.asTypeOf(Vec(way, gen)), io.w.req.bits.data).map(_.asTypeOf(wordType)))
-  val waymask = Mux(resetState, Fill(way, "b1".U), io.w.req.bits.waymask.getOrElse("b1".U))
-  when (wen) { array.write(setIdx, wdata, waymask.asBools) }
+  val wdata = Mux(resetState, 0.U.asTypeOf(Vec(way, gen)), io.w.req.bits.data).
+    asTypeOf(Vec(arrayPortSize, arrayType))
 
-  val raw_rdata = array.read(io.r.req.bits.setIdx, realRen)
+  // Memeory write
+  if (!useBitmask) {
+    val waymask = Mux(resetState, Fill(way, "b1".U), io.w.req.bits.waymask.getOrElse("b1".U))
+    when(wen) {
+      array.write(setIdx, wdata, waymask.asBools)
+    }
+  } else {
+    val bitmask = Mux(resetState, Fill(way * gen.getWidth, "b1".U), io.w.req.bits.flattened_bitmask.getOrElse("b1".U))
+    when(wen) {
+      array.write(setIdx, wdata, bitmask.asBools)
+    }
+  }
+
+  // Memory read
+  val raw_rdata = array.read(io.r.req.bits.setIdx, realRen).asTypeOf(Vec(way, wordType))
+  require(wdata.getWidth == raw_rdata.getWidth)
 
   // bypass for dual-port SRAMs
   require(!bypassWrite || bypassWrite && !singlePort)
@@ -159,12 +222,15 @@ class SRAMTemplate[T <: Data](
 
 }
 
-class FoldedSRAMTemplate[T <: Data](gen: T, set: Int, width: Int = 4, way: Int = 1,
+class FoldedSRAMTemplate[T <: Data](
+  gen: T, set: Int, width: Int = 4, way: Int = 1,
   shouldReset: Boolean = false, extraReset: Boolean = false,
-  holdRead: Boolean = false, singlePort: Boolean = false, bypassWrite: Boolean = false) extends Module {
+  holdRead: Boolean = false, singlePort: Boolean = false,
+  bypassWrite: Boolean = false, useBitmask: Boolean = false,
+) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
-    val w = Flipped(new SRAMWriteBus(gen, set, way))
+    val w = Flipped(new SRAMWriteBus(gen, set, way, useBitmask))
   })
   val extra_reset = if (extraReset) Some(IO(Input(Bool()))) else None
   //   |<----- setIdx ----->|
@@ -177,7 +243,8 @@ class FoldedSRAMTemplate[T <: Data](gen: T, set: Int, width: Int = 4, way: Int =
   val nRows = set / width
 
   val array = Module(new SRAMTemplate(gen, set=nRows, way=width*way,
-    shouldReset=shouldReset, extraReset=extraReset, holdRead=holdRead, singlePort=singlePort, bypassWrite=bypassWrite))
+    shouldReset=shouldReset, extraReset=extraReset, holdRead=holdRead,
+    singlePort=singlePort, bypassWrite=bypassWrite, useBitmask=useBitmask))
   if (array.extra_reset.isDefined) {
     array.extra_reset.get := extra_reset.get
   }
@@ -211,7 +278,11 @@ class FoldedSRAMTemplate[T <: Data](gen: T, set: Int, width: Int = 4, way: Int =
   }
   require(wmask.getWidth == way*width)
 
-  array.io.w.apply(wen, wdata, waddr, wmask)
+  if (useBitmask) {
+    array.io.w.apply(wen, wdata, waddr, wmask, io.w.req.bits.bitmask.get)
+  } else {
+    array.io.w.apply(wen, wdata, waddr, wmask)
+  }
 }
 class SRAMTemplateWithArbiter[T <: Data](nRead: Int, gen: T, set: Int, way: Int = 1,
   shouldReset: Boolean = false) extends Module {
