@@ -25,6 +25,12 @@ object GatedValidRegNext {
     last := RegEnable(next, init, next || last)
     last
   }
+
+  def apply(last: Vec[Bool]): Vec[Bool] = {
+    val next = Wire(last.cloneType)
+    next := RegEnable(last, last.asUInt.orR || next.asUInt.orR)
+    next
+  }
 }
 
 object GatedValidRegNextN {
