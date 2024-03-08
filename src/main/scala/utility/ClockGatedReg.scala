@@ -44,3 +44,22 @@ object GatedValidRegNextN {
     }
   }
 }
+
+object GatedRegNext{
+  def apply[T <: Data](last: T, initOpt: Option[T] = None): T = {
+    val next = Wire(last.cloneType)
+    initOpt match {
+      case Some(init) => next := RegEnable(last, init, (last.asUInt ^ next.asUInt).orR)
+      case None => next := RegEnable(last, (last.asUInt ^ next.asUInt).orR)
+    }
+    next
+  }
+}
+
+object GatedRegNextN {
+  def apply[T <: Data](in: T, n: Int, initOpt: Option[T] = None): T = {
+    (0 until n).foldLeft(in){
+      (prev, _) => GatedRegNext(prev, initOpt)
+    }
+  }
+}
