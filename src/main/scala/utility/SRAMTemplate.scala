@@ -195,14 +195,16 @@ class SRAMTemplate[T <: Data](
   // bypass for dual-port SRAMs
   require(!bypassWrite || bypassWrite && !singlePort)
   def need_bypass(wen: Bool, waddr: UInt, wmask: UInt, ren: Bool, raddr: UInt) : UInt = {
-    val need_check = RegNext(ren && wen)
-    val waddr_reg = RegNext(waddr)
-    val raddr_reg = RegNext(raddr)
+    val need_check = ren && wen
+    val need_check_reg = GatedValidRegNext(need_check)
+    val waddr_reg = RegEnable(waddr, need_check)
+    val raddr_reg = RegEnable(raddr, need_check)
+    val wmask_reg = RegEnable(wmask, need_check)
     require(wmask.getWidth == way)
-    val bypass = Fill(way, need_check && waddr_reg === raddr_reg) & RegNext(wmask)
+    val bypass = Fill(way, need_check_reg && waddr_reg === raddr_reg) & wmask_reg
     bypass.asTypeOf(UInt(way.W))
   }
-  val bypass_wdata = if (bypassWrite) VecInit(RegNext(io.w.req.bits.data).map(_.asTypeOf(wordType)))
+  val bypass_wdata = if (bypassWrite) VecInit(RegEnable(io.w.req.bits.data, io.w.req.valid && io.r.req.valid).map(_.asTypeOf(wordType)))
     else VecInit((0 until way).map(_ => LFSR64().asTypeOf(wordType)))
   val bypass_mask = need_bypass(io.w.req.valid, io.w.req.bits.setIdx, io.w.req.bits.waymask.getOrElse("b1".U), io.r.req.valid, io.r.req.bits.setIdx)
   val mem_rdata = {
@@ -213,7 +215,7 @@ class SRAMTemplate[T <: Data](
   }
 
   // hold read data for SRAMs
-  val rdata = (if (holdRead) HoldUnless(mem_rdata, RegNext(realRen))
+  val rdata = (if (holdRead) HoldUnless(mem_rdata, GatedValidRegNext(realRen))
               else mem_rdata).map(_.asTypeOf(gen))
 
   io.r.resp.data := VecInit(rdata)
@@ -253,7 +255,7 @@ class FoldedSRAMTemplate[T <: Data](
   io.w.req.ready := array.io.w.req.ready
 
   val raddr = io.r.req.bits.setIdx >> log2Ceil(width)
-  val ridx = RegNext(if (width != 1) io.r.req.bits.setIdx(log2Ceil(width)-1, 0) else 0.U(1.W))
+  val ridx = RegEnable(if (width != 1) io.r.req.bits.setIdx(log2Ceil(width)-1, 0) else 0.U(1.W), io.r.req.valid)
   val ren  = io.r.req.valid
 
   array.io.r.req.valid := ren
@@ -262,7 +264,7 @@ class FoldedSRAMTemplate[T <: Data](
   val rdata = array.io.r.resp.data
   for (w <- 0 until way) {
     val wayData = VecInit(rdata.indices.filter(_ % way == w).map(rdata(_)))
-    val holdRidx = HoldUnless(ridx, RegNext(io.r.req.valid))
+    val holdRidx = HoldUnless(ridx, GatedValidRegNext(io.r.req.valid))
     val realRidx = if (holdRead) holdRidx else ridx
     io.r.resp.data(w) := Mux1H(UIntToOH(realRidx, width), wayData)
   }
@@ -300,6 +302,6 @@ class SRAMTemplateWithArbiter[T <: Data](nRead: Int, gen: T, set: Int, way: Int 
 
   // latch read results
   io.r.map{ case r => {
-    r.resp.data := HoldUnless(ram.io.r.resp.data, RegNext(r.req.fire))
+    r.resp.data := HoldUnless(ram.io.r.resp.data, GatedValidRegNext(r.req.fire))
   }}
 }

@@ -25,9 +25,11 @@ class RawDataModuleTemplate[T <: Data](
   numRead: Int,
   numWrite: Int,
   isSync: Boolean,
-  optWrite: Seq[Int] = Seq()
+  optWrite: Seq[Int] = Seq(),
+  hasRen: Boolean = false
 ) extends Module {
   val io = IO(new Bundle {
+    val ren   = if(hasRen) Some(Vec(numRead, Input(Bool()))) else None
     val rvec  = Vec(numRead,  Input(UInt(numEntries.W)))
     val rdata = Vec(numRead,  Output(gen))
     val wen   = Vec(numWrite, Input(Bool()))
@@ -37,12 +39,16 @@ class RawDataModuleTemplate[T <: Data](
 
   val data = Reg(Vec(numEntries, gen))
 
-  val wen = io.wen.zipWithIndex.map{ case (en, i) => if (optWrite.contains(i)) RegNext(en) else en }
+  val wen = io.wen.zipWithIndex.map{ case (en, i) => if (optWrite.contains(i)) GatedValidRegNext(en) else en }
   val wvec = io.wvec.zipWithIndex.map{ case (v, i) => if (optWrite.contains(i)) RegEnable(v, io.wen(i)) else v }
   val wdata = io.wdata.zipWithIndex.map{ case (d, i) => if (optWrite.contains(i)) RegEnable(d, io.wen(i)) else d }
 
   // read ports
-  val rvec = if (isSync) RegNext(io.rvec) else io.rvec
+  val rvec = if (isSync) {
+    if (hasRen) {
+      (io.ren.get zip io.rvec).map{ case (ren, raddr) => RegEnable(raddr, ren) }
+    } else RegNext(io.rvec)
+  } else io.rvec
   for (i <- 0 until numRead) {
     assert(PopCount(rvec(i)) <= 1.U)
     io.rdata(i) := Mux1H(rvec(i), data)
@@ -52,7 +58,7 @@ class RawDataModuleTemplate[T <: Data](
     val data_next = WireInit(data)
     val wbypass = io.wen.zip(io.wvec).zip(wdata).zipWithIndex.filter(x => optWrite.contains(x._2)).map(_._1)
     for (i <- 0 until numEntries) {
-      val wbypass_en = wbypass.map(w => RegNext(w._1._1 && w._1._2(i)))
+      val wbypass_en = wbypass.map(w => GatedValidRegNext(w._1._1 && w._1._2(i)))
       when (VecInit(wbypass_en).asUInt.orR) {
         data_next(i) := Mux1H(wbypass_en, wbypass.map(_._2))
       }
@@ -87,9 +93,11 @@ class SyncDataModuleTemplate[T <: Data](
   numWrite: Int,
   parentModule: String = "",
   concatData: Boolean = false,
-  perReadPortBypassEnable: Option[Seq[Boolean]] = None
+  perReadPortBypassEnable: Option[Seq[Boolean]] = None,
+  hasRen: Boolean = false
 ) extends Module {
   val io = IO(new Bundle {
+    val ren   = if (hasRen) Some(Vec(numRead, Input(Bool()))) else None
     val raddr = Vec(numRead,  Input(UInt(log2Ceil(numEntries).W)))
     val rdata = Vec(numRead,  Output(gen))
     val wen   = Vec(numWrite, Input(Bool()))
@@ -120,8 +128,10 @@ class SyncDataModuleTemplate[T <: Data](
     val dataBank = Module(new NegedgeDataModuleTemplate(dataType, bankEntries, numRead, numWrite, parentModule, perReadPortBypassEnable))
 
     // delay one clock
-    val raddr_dup = RegNext(io.raddr)
-    val wen_dup = RegNext(io.wen)
+    val raddr_dup = if (hasRen) {
+      (io.ren.get zip io.raddr).map{ case(ren,raddr) => RegEnable(raddr, ren) }
+    } else RegNext(io.raddr)
+    val wen_dup = io.wen.map(en => GatedValidRegNext(en))
     val waddr_dup = io.wen.zip(io.waddr).map(w => RegEnable(w._2, w._1))
 
     // input
@@ -142,7 +152,9 @@ class SyncDataModuleTemplate[T <: Data](
   // output
   val rdata = if (concatData) dataBanks.map(_.io.rdata.map(_.asTypeOf(gen))) else dataBanks.map(_.io.rdata)
   for (j <- 0 until numRead) {
-    val raddr_dup = RegNext(io.raddr(j))
+    val raddr_dup = if (hasRen) {
+      RegEnable(io.raddr(j), io.ren.get(j))
+    } else RegNext(io.raddr(j))
     val index_dec = UIntToOH(bankIndex(raddr_dup), numBanks)
     io.rdata(j) := Mux1H(index_dec, rdata.map(_(j)))
   }
@@ -193,8 +205,9 @@ class NegedgeDataModuleTemplate[T <: Data](
 }
 
 class Folded1WDataModuleTemplate[T <: Data](gen: T, numEntries: Int, numRead: Int,
-  isSync: Boolean, width: Int, hasResetEn: Boolean = true) extends Module {
+  isSync: Boolean, width: Int, hasResetEn: Boolean = true, hasRen: Boolean = false) extends Module {
   val io = IO(new Bundle {
+    val ren = if (hasRen) Some(Vec(numRead, Input(Bool()))) else None
     val raddr = Vec(numRead,  Input(UInt(log2Up(numEntries).W)))
     val rdata = Vec(numRead,  Output(gen))
     val wen   = Input(Bool())
@@ -215,10 +228,14 @@ class Folded1WDataModuleTemplate[T <: Data](gen: T, numEntries: Int, numRead: In
     io.resetEn.map(en => when (en) { doing_reset := true.B })
   }
   val resetRow = RegInit(0.U(log2Ceil(nRows).W))
-  resetRow := resetRow + doing_reset
+  when (doing_reset) { resetRow := resetRow + true.B }
   when (resetRow === (nRows-1).U) { doing_reset := false.B }
 
-  val raddr = if (isSync) RegNext(io.raddr) else io.raddr
+  val raddr = if (isSync) {
+    if (hasRen) {
+      (io.raddr zip io.ren.get) map { case (raddr, ren) => RegEnable(raddr, ren) }
+    } else RegNext(io.raddr)
+  } else io.raddr
 
   for (i <- 0 until numRead) {
     val addr = raddr(i) >> log2Ceil(width)
