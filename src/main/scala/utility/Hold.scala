@@ -133,11 +133,11 @@ object DelayNWithValid{
     (pipMod.io.out_valid, pipMod.io.out_bits)
   }
 
-  def apply[K <: Data, T <: Valid[K]](in: T, n: Int): T = {
+  def apply[T <: Valid[Data]](in: T, n: Int): T = {
     val pipMod = Module(new DelayNWithValid(in.bits.cloneType, n))
     pipMod.io.in_valid := in.valid
     pipMod.io.in_bits := in.bits
-    val res = in.cloneType
+    val res = Wire(in.cloneType)
     res.valid := pipMod.io.out_valid
     res.bits := pipMod.io.out_bits
     res
@@ -150,11 +150,11 @@ object DelayNWithValid{
     (pipMod.io.out_valid, pipMod.io.out_bits)
   }
 
-  def apply[K <: Data, T <: Valid[K]](in: T, n: Int, hasInit: Boolean): T = {
+  def apply[T <: Valid[Data]](in: T, n: Int, hasInit: Boolean): T = {
     val pipMod = Module(new DelayNWithValid(in.bits.cloneType, n, hasInit = hasInit))
     pipMod.io.in_valid := in.valid
     pipMod.io.in_bits := in.bits
-    val res = in.cloneType
+    val res = Wire(in.cloneType)
     res.valid := pipMod.io.out_valid
     res.bits := pipMod.io.out_bits
     res
