@@ -25,14 +25,14 @@ trait HasTableUtils {
 
   case class Column(field: String, refPort: RefPort, vExpr: String)
 
-  def get_columns(in: Data, prefix: String): List[Column] = {
+  def get_columns(in: Data, prefix: String, portName: String = ""): List[Column] = {
     in match {
       case rc: Record =>
         rc.elements
           .flatMap({
             case (s, d) =>
               val newPrefix = if (prefix == "") s else prefix + "_" + s
-              get_columns(d, newPrefix)
+              get_columns(d, newPrefix, portName)
           })
           .toList
       case vec: Vec[_] =>
@@ -40,7 +40,7 @@ trait HasTableUtils {
           .flatMap({
             case (elm, i) =>
               val newPrefix = prefix + "_" + i
-              get_columns(elm, newPrefix)
+              get_columns(elm, newPrefix, portName)
           })
           .toList
       case elm: Element =>
@@ -64,7 +64,8 @@ trait HasTableUtils {
         }
 
         val ranges = split_ui(ui.getWidth)
-        val refPort = RefPort("data_" + prefix, ui.getWidth)
+        val portNamePrefix = if (portName == "") "" else (portName + "_")
+        val refPort = RefPort(portNamePrefix + prefix, ui.getWidth)
         if (ranges.size == 1) {
           List(Column(prefix, refPort, refPort.ref))
         } else {
@@ -82,7 +83,8 @@ trait HasTableUtils {
 class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: T) extends HasTableUtils {
 
   def genCpp: (String, String) = {
-    val cols = get_columns(hw, "").map(_.field)
+    // NOTE: "data" is the signal name of TableWriter's IO
+    val cols = get_columns(hw, "", "data").map(_.field)
     val init =
       s"""
          |void init_db_$tableName() {
@@ -185,7 +187,7 @@ private class TableWriteHelper[T <: Record](tableName: String, hw: T, site: Stri
   val dpicFunc = s"${tableName}_write"
 
   // construct dpic api and verilog module ports
-  val table = get_columns(io.data, prefix = "")
+  val table = get_columns(io.data, prefix = "", portName = "data")
   val dpicInputs = table.map(_.field)
   val verilogModulePorts = table.map(_.refPort).distinct.map(r => s"input [${r.width - 1}:0] ${r.ref}")
 
