@@ -151,6 +151,45 @@ class MyMap[T <: Data, U <: Data](
     else print_map
   }
 
+  def get_save_file: String = {
+    val save_to_file =
+      s"""
+         |extern "C" void save_${cmap_name}(const char *filename_prefix) {
+         |  char name_buf[1024];
+         |  strcpy(name_buf, filename_prefix);
+         |  strcat(name_buf, ".${cmap_name}.csv");
+         |
+         |  std::ofstream file(name_buf);
+         |  if (!file.is_open()) {
+         |    std::cout << "Error opening file: " << name_buf << std::endl;
+         |    return;
+         |  }
+         |
+         |  file << ${key_type_cols.map('"' + _ + '"').mkString("<< ',' << ")}
+         |       << "->"
+         |       << ${value_type_cols.map('"' + _ + '"').mkString("<< ',' << ")}
+         |       << std::endl;
+         |  for (auto it = $cmap_name.begin(); it != $cmap_name.end(); it++) {
+         |    file << std::hex
+         |      << ${key_type_cols.map("it->first." + _).mkString(" << ',' << ")}
+         |      << std::dec << "->"
+         |      << ${value_type_cols.map("it->second." + _).mkString("  << ',' << ")}
+         |      << std::endl;
+         |  }
+         |
+         |  file.close();
+         |}
+         |""".stripMargin
+    val dummy =
+      s"""
+         |extern "C" void save_${cmap_name}(const char *filename_prefix) {
+         |
+         |}
+         |""".stripMargin
+    if (envInFPGA) dummy
+    else save_to_file
+  }
+
   def log(key: Vec[T], value: Vec[U], en: Vec[Bool], site: String = "", clock: Clock, reset: Reset): Unit = {
     if(!envInFPGA){
       val writer = Module(new MyMapWriteHelper(mapName, keyHw, valueHw, site))
@@ -316,9 +355,11 @@ object ChiselMap {
       |#include <cstdint>
       |#include <cerrno>
       |#include <unistd.h>
+      |#include <iostream>
+      |#include <fstream>
       |
       |void init_map(bool en);
-      |void save_maps(const char *filename);
+      |void save_maps(const char *filename_prefix);
       |
       |#endif
       |""".stripMargin
@@ -336,16 +377,18 @@ object ChiselMap {
 
     val save =
       s"""
-         |void save_maps(const char *zFilename) {
-         |  printf("saving map to %s ...\\n", zFilename);
+         |void save_maps(const char *zFilename_prefix) {
+         |  printf("saving map to %s.mapName.csv ...\\n", zFilename_prefix);
          |  // TODO: how to save the map
          |  ${cmaps_name.map(mn => s"print_${mn}();").mkString("", "\n", "\n")}
+         |  ${cmaps_name.map(mn => s"save_${mn}(zFilename_prefix);").mkString("", "\n", "\n")}
          |}
          |""".stripMargin
 
     val maps_init = table_map.values.map(_.get_init)
     val maps_insert = table_map.values.map(_.get_insert)
     val maps_print = table_map.values.map(_.get_print)
+    val maps_save_file = table_map.values.map(_.get_save_file)
 
     s"""
        |#include "chisel_map.h"
@@ -357,6 +400,7 @@ object ChiselMap {
        |${maps_init.mkString("  ", "\n  ", "\n")}
        |${maps_insert.mkString("  ", "\n  ", "\n")}
        |${maps_print.mkString("  ", "\n  ", "\n")}
+       |${maps_save_file.mkString("  ", "\n  ", "\n")}
        |
        |$init
        |$save
