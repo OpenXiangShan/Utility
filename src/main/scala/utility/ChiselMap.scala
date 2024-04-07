@@ -83,20 +83,23 @@ class MyMap[T <: Data, U <: Data](
       val value_cols_slice = value_cols.slice(i*value_bundle_size, (i+1)*value_bundle_size)
       println(s"key_cols_slice")
       s"""
+         |  if (!en_$i) return;
          |  key = {${key_cols_slice.mkString(", ")}};
          |  value = {${value_cols_slice.mkString(", ")}};
          |
          |  if ($cmap_name.find(key) == $cmap_name.end()) {
-         |    std::cout << std::hex
-         |              << "Inserting new key: " << ${key_type_cols.map("key." + _).mkString(" << ")}
-         |              << " value: " << ${value_type_cols.map("value." + _).mkString("  <<  ")}
-         |              << std::endl;
+         |//    std::cout << std::hex
+         |//              << "Inserting new key: " << ${key_type_cols.map("key." + _).mkString(" << '_' << ")}
+         |//              << std::dec
+         |//              << " value: " << ${value_type_cols.map("value." + _).mkString("  << '_' << ")}
+         |//              << std::endl;
          |    $cmap_name[key] = value;
          |  } else {
-         |    std::cout << std::hex
-         |              <<"Inserting old key: " << ${key_type_cols.map("key." + _).mkString(" << ")}
-         |              << " value: " << ${value_type_cols.map("value." + _).mkString("  <<  ")}
-         |              << std::endl;
+         |//    std::cout << std::hex
+         |//              <<"Inserting old key: " << ${key_type_cols.map("key." + _).mkString(" << '_' << ")}
+         |//              << std::dec
+         |//              << " value: " << ${value_type_cols.map("value." + _).mkString("  << '_' << ")}
+         |//              << std::endl;
          |    $cmap_name[key] += value;
          |  }
          |"""
@@ -106,6 +109,7 @@ class MyMap[T <: Data, U <: Data](
          |extern "C" void ${mapName}_map_write(
          |  ${key_cols.map(c => "uint64_t " + c).mkString("", ",\n  ", ",")}
          |  ${value_cols.map(c => "uint64_t " + c).mkString("", ",\n  ", ",")}
+         |  ${(0 until vec_size).map(i => s"bool en_$i").mkString("", ",\n  ", ",")}
          |  char *site
          |) {
          |  // if(!dump || !enable_dump_$mapName) return;
@@ -237,7 +241,8 @@ private class MyMapWriteHelper[T <: Data, U <: Data](
     val value = Input(valueHw.cloneType)
     val en = Input(Vec(width, Bool()))
   })
-  require(io.value.head.getWidth <= 64, "valueVec width should be less than 64 bits")
+  // require(io.value.head.getWidth <= 64, "valueVec width should be less than 64 bits")
+  // require(io.value.head.elements.map(_._2.getWidth <= 64).reduce(_ && _), "value's elements width should be less than 64 bits")
 
   val moduleName = s"${mapName}MapWriter"
   val dpicFunc = s"${mapName}_map_write"
@@ -309,6 +314,11 @@ object ChiselMap {
       })
   }
 
+  // def createTableWidth[T <: Data, U <: Data](mapName: String, keyHw: T, valueHw: U, width: Integer, basicDB: Boolean = this.enable): MyMap[T, U] = {
+  //   val key = Wire(Vec(width, new chiselTypeOf(keyHw)))
+  //   val value = Wire(Vec(width, new chiselTypeOf(valueHw)))
+  //   createTableBase(mapName, key, value, basicDB)
+  // }
 
   def createTable[T <: Data](mapName: String, keyHw: Vec[T], basicDB: Boolean = this.enable): MyMap[T, UInt] = {
     createTableBase(mapName, keyHw, Vec(keyHw.size, UInt(64.W)), this.enable)
