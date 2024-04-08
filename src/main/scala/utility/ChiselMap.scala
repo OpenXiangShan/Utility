@@ -83,24 +83,25 @@ class MyMap[T <: Data, U <: Data](
       val value_cols_slice = value_cols.slice(i*value_bundle_size, (i+1)*value_bundle_size)
       println(s"key_cols_slice")
       s"""
-         |  if (!en_$i) return;
-         |  key = {${key_cols_slice.mkString(", ")}};
-         |  value = {${value_cols_slice.mkString(", ")}};
+         |  if (en_$i) {
+         |    key = {${key_cols_slice.mkString(", ")}};
+         |    value = {${value_cols_slice.mkString(", ")}};
          |
-         |  if ($cmap_name.find(key) == $cmap_name.end()) {
-         |//    std::cout << std::hex
-         |//              << "Inserting new key: " << ${key_type_cols.map("key." + _).mkString(" << '_' << ")}
-         |//              << std::dec
-         |//              << " value: " << ${value_type_cols.map("value." + _).mkString("  << '_' << ")}
-         |//              << std::endl;
-         |    $cmap_name[key] = value;
-         |  } else {
-         |//    std::cout << std::hex
-         |//              <<"Inserting old key: " << ${key_type_cols.map("key." + _).mkString(" << '_' << ")}
-         |//              << std::dec
-         |//              << " value: " << ${value_type_cols.map("value." + _).mkString("  << '_' << ")}
-         |//              << std::endl;
-         |    $cmap_name[key] += value;
+         |    if ($cmap_name.find(key) == $cmap_name.end()) {
+         |  //    std::cout << std::hex
+         |  //              << "Inserting new key: " << ${key_type_cols.map("key." + _).mkString(" << '_' << ")}
+         |  //              << std::dec
+         |  //              << " value: " << ${value_type_cols.map("value." + _).mkString("  << '_' << ")}
+         |  //              << std::endl;
+         |      $cmap_name[key] = value;
+         |    } else {
+         |  //    std::cout << std::hex
+         |  //              <<"Inserting old key: " << ${key_type_cols.map("key." + _).mkString(" << '_' << ")}
+         |  //              << std::dec
+         |  //              << " value: " << ${value_type_cols.map("value." + _).mkString("  << '_' << ")}
+         |  //              << std::endl;
+         |      $cmap_name[key] += value;
+         |    }
          |  }
          |"""
     }
