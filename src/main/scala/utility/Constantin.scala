@@ -133,9 +133,14 @@ object Constantin extends ConstantinParams {
        |void constantinLoad() {
        |  constantinInit();
        |  uint64_t num;
-       |  string tmp;
-       |  string noop_home = getenv("NOOP_HOME");
-       |  tmp = noop_home + "/build/${objectName}.txt";
+       |  const char *noop_home = getenv("NOOP_HOME");
+       |#ifdef NOOP_HOME
+       |  if (!noop_home) {
+       |    noop_home = NOOP_HOME;
+       |  }
+       |#endif
+       |  string noop_home_s = noop_home;
+       |  string tmp = noop_home_s + "/build/${objectName}.txt";
        |  cf.open(tmp.c_str(), ios::in);
        |  if(cf.good()){
        |    while (cf >> tmp >> num) {
@@ -215,4 +220,3 @@ object Constantin extends ConstantinParams {
   }
 
 }
-
