@@ -66,3 +66,13 @@ class ClockGate extends BlackBox with HasBlackBoxInline {
       |""".stripMargin
   setInline("ClockGate.v", verilog)
 }
+
+object ClockGate {
+  def apply(TE: Bool, E: Bool, CK: Clock) : Clock = {
+    val clock_gate = Module(new ClockGate).io
+    clock_gate.TE := TE
+    clock_gate.E  := E
+    clock_gate.CK := CK
+    clock_gate.Q
+  }
+}
