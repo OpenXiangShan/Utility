@@ -32,6 +32,7 @@ object MemReqSource extends Enumeration {
   val L1DataPrefetch = Value("L1DataPrefetch")
   val PTW = Value("PTW")
   val Prefetch2L2BOP = Value("Prefetch2L2BOP")
+  val Prefetch2L2PBOP = Value("Prefetch2L2PBOP")
   val Prefetch2L2SMS = Value("Prefetch2L2SMS")
   val Prefetch2L2Stream = Value("Prefetch2L2Stream")
   val Prefetch2L2Stride = Value("Prefetch2L2Stride")
