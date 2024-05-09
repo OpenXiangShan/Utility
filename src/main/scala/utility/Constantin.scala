@@ -30,10 +30,9 @@ trait ConstantinParams {
   }
 }
 
-private class SignalReadHelper(constName: String) extends BlackBox with HasBlackBoxInline with ConstantinParams {
+private class SignalReadHelper(constName: String, initValue: BigInt)
+  extends BlackBox with HasBlackBoxInline with ConstantinParams {
   val io = IO(new Bundle{
-    //val clock = Input(Clock())
-    //val reset = Input(Reset())
     val value = Output(UInt(UIntWidth.W))
   })
 
@@ -42,13 +41,19 @@ private class SignalReadHelper(constName: String) extends BlackBox with HasBlack
 
   val verilog =
     s"""
+       |`ifndef SYNTHESIS
        |import "DPI-C" function longint $dpicFunc();
+       |`endif
        |
        |module $moduleName(
        |  output reg [$UIntWidth - 1:0] value
        |);
        |
+       |`ifdef SYNTHESIS
+       |  initial value = $initValue;
+       |`else
        |  initial value = $dpicFunc();
+       |`endif
        |endmodule
        |""".stripMargin
   setInline(s"$moduleName.v", verilog)
@@ -80,15 +85,19 @@ object Constantin extends ConstantinParams {
     this.enable = enable
   }
 
-  def createRecord(constName: String, initValue: UInt = 0.U): UInt = {
-    initMap(constName) = initValue.litValue
+  def createRecord(constName: String, initValue: Boolean): Bool = {
+    createRecord(constName, if (initValue) 1 else 0)(0)
+  }
+
+  def createRecord(constName: String, initValue: BigInt = 0): UInt = {
+    initMap(constName) = initValue
 
     if (!this.enable) {
-      println(s"Constantin initRead: ${constName} = ${initValue.litValue}")
-      initValue.asTypeOf(UInt(UIntWidth.W))
+      println(s"Constantin initRead: $constName = $initValue")
+      initValue.U(UIntWidth.W)
     } else {
-      println(s"Constantin fileRead: ${constName} = ${initValue.litValue}")
-      Module(new SignalReadHelper(constName)).suggestName(s"recordModule_${constName}").io.value
+      println(s"Constantin fileRead: $constName = $initValue")
+      Module(new SignalReadHelper(constName, initValue)).suggestName(s"recordModule_$constName").io.value
     }
   }
 
