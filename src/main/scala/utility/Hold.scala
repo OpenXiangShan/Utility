@@ -97,7 +97,7 @@ class DelayN[T <: Data](gen: T, n: Int) extends Module {
 
 object DelayN {
   def apply[T <: Data](in: T, n: Int): T = {
-    val delay = Module(new DelayN(in.cloneType, n))
+    val delay = Module(new DelayN(chiselTypeOf(in), n))
     delay.io.in := in
     delay.io.out
   }
@@ -127,34 +127,34 @@ class DelayNWithValid[T <: Data](gen: T, n: Int, hasInit: Boolean = true) extend
 
 object DelayNWithValid{
   def apply[T <: Data](in: T, valid: Bool, n: Int): (Bool, T) = {
-    val pipMod = Module(new DelayNWithValid(in.cloneType, n))
+    val pipMod = Module(new DelayNWithValid(chiselTypeOf(in), n))
     pipMod.io.in_valid := valid
     pipMod.io.in_bits := in
     (pipMod.io.out_valid, pipMod.io.out_bits)
   }
 
-  def apply[K <: Data, T <: Valid[K]](in: T, n: Int): T = {
-    val pipMod = Module(new DelayNWithValid(in.bits.cloneType, n))
+  def apply[T <: Valid[Data]](in: T, n: Int): T = {
+    val pipMod = Module(new DelayNWithValid(chiselTypeOf(in.bits), n))
     pipMod.io.in_valid := in.valid
     pipMod.io.in_bits := in.bits
-    val res = in.cloneType
+    val res = Wire(in)
     res.valid := pipMod.io.out_valid
     res.bits := pipMod.io.out_bits
     res
   }
 
   def apply[T <: Data](in: T, valid: Bool, n: Int, hasInit: Boolean): (Bool, T) = {
-    val pipMod = Module(new DelayNWithValid(in.cloneType, n, hasInit = hasInit))
+    val pipMod = Module(new DelayNWithValid(chiselTypeOf(in), n, hasInit = hasInit))
     pipMod.io.in_valid := valid
     pipMod.io.in_bits := in
     (pipMod.io.out_valid, pipMod.io.out_bits)
   }
 
-  def apply[K <: Data, T <: Valid[K]](in: T, n: Int, hasInit: Boolean): T = {
-    val pipMod = Module(new DelayNWithValid(in.bits.cloneType, n, hasInit = hasInit))
+  def apply[T <: Valid[Data]](in: T, n: Int, hasInit: Boolean): T = {
+    val pipMod = Module(new DelayNWithValid(chiselTypeOf(in.bits), n, hasInit = hasInit))
     pipMod.io.in_valid := in.valid
     pipMod.io.in_bits := in.bits
-    val res = in.cloneType
+    val res = Wire(in)
     res.valid := pipMod.io.out_valid
     res.bits := pipMod.io.out_bits
     res
