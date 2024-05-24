@@ -20,14 +20,16 @@ import chisel3._
 import chisel3.util._
 
 object GatedValidRegNext {
+  // 3 is the default minimal width of EDA inserted clock gating cells.
+  // so using `GatedValidRegNext` to signals whoes width is less than 3 may not help.
   def apply(next: Bool, init: Bool = false.B): Bool = {
-    val last = Wire(chiselTypeOf(next))
+    val last = Wire(Bool())
     last := RegEnable(next, init, next || last)
     last
   }
 
   def apply(last: Vec[Bool]): Vec[Bool] = {
-    val next = Wire(chiselTypeOf(last))
+    val next = Wire(last)
     next := RegEnable(last, last.asUInt.orR || next.asUInt.orR)
     next
   }
@@ -47,10 +49,10 @@ object GatedValidRegNextN {
 
 object GatedRegNext{
   def apply[T <: Data](last: T, initOpt: Option[T] = None): T = {
-    val next = Wire(chiselTypeOf(last))
+    val next = Wire(last)
     initOpt match {
-      case Some(init) => next := RegEnable(last, init, (last.asUInt ^ next.asUInt).orR)
-      case None => next := RegEnable(last, (last.asUInt ^ next.asUInt).orR)
+      case Some(init) => next := RegEnable(last, init, last.asUInt =/= next.asUInt)
+      case None => next := RegEnable(last, last.asUInt =/= next.asUInt)
     }
     next
   }

@@ -137,7 +137,7 @@ object DelayNWithValid{
     val pipMod = Module(new DelayNWithValid(chiselTypeOf(in.bits), n))
     pipMod.io.in_valid := in.valid
     pipMod.io.in_bits := in.bits
-    val res = Wire(chiselTypeOf(in))
+    val res = Wire(in)
     res.valid := pipMod.io.out_valid
     res.bits := pipMod.io.out_bits
     res
@@ -154,7 +154,7 @@ object DelayNWithValid{
     val pipMod = Module(new DelayNWithValid(chiselTypeOf(in.bits), n, hasInit = hasInit))
     pipMod.io.in_valid := in.valid
     pipMod.io.in_bits := in.bits
-    val res = Wire(chiselTypeOf(in))
+    val res = Wire(in)
     res.valid := pipMod.io.out_valid
     res.bits := pipMod.io.out_bits
     res
