@@ -21,13 +21,13 @@ import chisel3.util._
 
 object GatedValidRegNext {
   def apply(next: Bool, init: Bool = false.B): Bool = {
-    val last = Wire(next.cloneType)
+    val last = Wire(chiselTypeOf(next))
     last := RegEnable(next, init, next || last)
     last
   }
 
   def apply(last: Vec[Bool]): Vec[Bool] = {
-    val next = Wire(last.cloneType)
+    val next = Wire(chiselTypeOf(last))
     next := RegEnable(last, last.asUInt.orR || next.asUInt.orR)
     next
   }
@@ -47,7 +47,7 @@ object GatedValidRegNextN {
 
 object GatedRegNext{
   def apply[T <: Data](last: T, initOpt: Option[T] = None): T = {
-    val next = Wire(last.cloneType)
+    val next = Wire(chiselTypeOf(last))
     initOpt match {
       case Some(init) => next := RegEnable(last, init, (last.asUInt ^ next.asUInt).orR)
       case None => next := RegEnable(last, (last.asUInt ^ next.asUInt).orR)
