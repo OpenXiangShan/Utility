@@ -75,8 +75,8 @@ class SegmentedAddr(_segments: Seq[Int]) {
   private var addr = UInt(segments.sum.W)
 
   // [High, Lower ...]
-  private def segment(addr_in: UInt): Seq[UInt] = {
-    segments.foldLeft((Seq[UInt](), addr_in.asBools)) { (acc, segment_length) =>
+  private def segment(addrIn: UInt): Seq[UInt] = {
+    segments.foldLeft((Seq[UInt](), addrIn.asBools)) { (acc, segment_length) =>
       ((acc._1 :+ VecInit(acc._2.takeRight(segment_length)).asUInt), acc._2.dropRight(segment_length))
     }._1
   }
@@ -91,8 +91,8 @@ class SegmentedAddr(_segments: Seq[Int]) {
     this.addr = seg.reduce(Cat(_, _))
     this
   }
-  def fromAddr(addr_in: UInt) = {
-    this.addr = addr_in
+  def fromAddr(addrIn: UInt) = {
+    this.addr = addrIn
     this
   }
 
@@ -124,8 +124,10 @@ object SegmentedAddrNext {
 
     val modified = Wire(Vec(segmented.length, Bool()))
 
-    val segmentedNext = segmented zip modified.zipWithIndex map {
-      case (seg, (modified, idx)) => RegEnable(seg, modified && fire)
+    val segmentedNext = segments zip segmented zip modified.zipWithIndex map {
+      case ((segLength, seg), (modified, idx)) =>
+      // Must init here to avoid X state
+      RegEnable(seg, 0.U(segLength.W), modified && fire)
         .suggestName(s"${parentName.getOrElse("")}_seg_${idx}_value")
     }
     modified zip segmentedNext zip segmented map {
@@ -136,7 +138,9 @@ object SegmentedAddrNext {
     val seg = new SegmentedAddr(segments).fromSegments(segmentedNext)
     if (parentName.isDefined) {
       val debug_addr = WireDefault(seg.getAddr()).suggestName(s"debug_${parentName.get}_addr")
+      val debug_modified = modified.suggestName(s"debug_${parentName.get}_modified")
       dontTouch(debug_addr)
+      dontTouch(debug_modified)
     }
 
     seg
