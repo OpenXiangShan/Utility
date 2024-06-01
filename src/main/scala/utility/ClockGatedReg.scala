@@ -18,6 +18,7 @@ package utility
 
 import chisel3._
 import chisel3.util._
+import org.chipsalliance.cde.config.Parameters
 
 object GatedValidRegNext {
   // 3 is the default minimal width of EDA inserted clock gating cells.
@@ -63,5 +64,85 @@ object GatedRegNextN {
     (0 until n).foldLeft(in){
       (prev, _) => GatedRegNext(prev, initOpt)
     }
+  }
+}
+
+class SegmentedAddr(_segments: Seq[Int]) {
+
+  def this(f: Parameters => Seq[Int])(implicit p: Parameters) = this(f(p))
+
+  val segments = _segments // (High, Lower ...)
+  private var addr = UInt(segments.sum.W)
+
+  // [High, Lower ...]
+  private def segment(addrIn: UInt): Seq[UInt] = {
+    segments.foldLeft((Seq[UInt](), addrIn.asBools)) { (acc, segment_length) =>
+      ((acc._1 :+ VecInit(acc._2.takeRight(segment_length)).asUInt), acc._2.dropRight(segment_length))
+    }._1
+  }
+
+  def getAddr(): UInt = {
+    addr
+  }
+  def getAddrSegments(): Seq[UInt] = {
+    segment(addr)
+  }
+  def fromSegments(seg: Seq[UInt]) = {
+    this.addr = seg.reduce(Cat(_, _))
+    this
+  }
+  def fromAddr(addrIn: UInt) = {
+    this.addr = addrIn
+    this
+  }
+
+  def compare(that: SegmentedAddr): Seq[Bool] = {
+    this.getAddrSegments() zip that.getAddrSegments() map {
+      case (l, r) => l =/= r
+    }
+  }
+
+  def compare(that: Seq[UInt]): Seq[Bool] = {
+    this.getAddrSegments() zip that map {
+      case (l, r) => l =/= r
+    }
+  }
+}
+
+object SegmentedAddrNext {
+  def apply(addr: SegmentedAddr): SegmentedAddr = {
+    apply(addr, true.B, None)
+  }
+
+  def apply(addr: SegmentedAddr, fire: Bool, parentName: Option[String]): SegmentedAddr = {
+    apply(addr.getAddr(), addr.segments, fire, parentName)
+  }
+
+  def apply(addr: UInt, segments: Seq[Int], fire: Bool, parentName: Option[String]): SegmentedAddr = {
+    // Input wire, segmented
+    val segmented = new SegmentedAddr(segments).fromAddr(addr).getAddrSegments()
+
+    val modified = Wire(Vec(segmented.length, Bool()))
+
+    val segmentedNext = segments zip segmented zip modified.zipWithIndex map {
+      case ((segLength, seg), (modified, idx)) =>
+      // Must init here to avoid X state
+      RegEnable(seg, 0.U(segLength.W), modified && fire)
+        .suggestName(s"${parentName.getOrElse("")}_seg_${idx}_value")
+    }
+    modified zip segmentedNext zip segmented map {
+      case ((m, next), now) => m := next =/= now
+    }
+    modified.last := true.B // Assume lower part often changes
+
+    val seg = new SegmentedAddr(segments).fromSegments(segmentedNext)
+    if (parentName.isDefined) {
+      val debug_addr = WireDefault(seg.getAddr()).suggestName(s"debug_${parentName.get}_addr")
+      val debug_modified = modified.suggestName(s"debug_${parentName.get}_modified")
+      dontTouch(debug_addr)
+      dontTouch(debug_modified)
+    }
+
+    seg
   }
 }
