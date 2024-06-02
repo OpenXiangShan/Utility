@@ -30,7 +30,7 @@ object GatedValidRegNext {
 
   def apply(last: Vec[Bool]): Vec[Bool] = {
     val next = Wire(chiselTypeOf(last))
-    next := RegEnable(last, last.asUInt.orR || next.asUInt.orR)
+    next := RegEnable(last, VecInit(Seq.fill(last.size)(false.B)), last.asUInt =/= next.asUInt)
     next
   }
 }
@@ -48,11 +48,30 @@ object GatedValidRegNextN {
 }
 
 object GatedRegNext{
+  // Vec can be judged and assigned one by one
+  def regEnableVec[T <: Data](lastVec: Vec[T], initOptVec: Option[Vec[T]]): Vec[T] = {
+    val nextVec = Wire(chiselTypeOf(lastVec))
+    for (i <- 0 until lastVec.length) {
+      initOptVec match {
+        case Some(initVec) => nextVec(i) := RegEnable(lastVec(i), initVec(i), lastVec(i).asUInt =/= nextVec(i).asUInt)
+        case None => nextVec(i) := RegEnable(lastVec(i), 0.U.asTypeOf(lastVec(i)), lastVec(i).asUInt =/= nextVec(i).asUInt)
+      }
+    }
+    nextVec
+  }
+
+  // NOTICE: The larger Data width , the longger time of =/= operations, which may lead to timing violations.
+  // Callers need to consider timing requirements themselves.
   def apply[T <: Data](last: T, initOpt: Option[T] = None): T = {
     val next = Wire(chiselTypeOf(last))
-    initOpt match {
-      case Some(init) => next := RegEnable(last, init, last.asUInt =/= next.asUInt)
-      case None => next := RegEnable(last, last.asUInt =/= next.asUInt)
+    last match {
+      case v: Vec[_] =>
+        next := regEnableVec(v.asInstanceOf[Vec[T]], initOpt.map(_.asInstanceOf[Vec[T]]))
+      case _ =>
+        initOpt match {
+          case Some(init) => next := RegEnable(last, init, last.asUInt =/= next.asUInt)
+          case None => next := RegEnable(last, 0.U.asTypeOf(last), last.asUInt =/= next.asUInt)
+        }
     }
     next
   }
