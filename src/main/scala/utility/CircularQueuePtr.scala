@@ -124,7 +124,7 @@ trait HasCircularQueuePtrHelper {
 
 // Should only be used when left and right are continuous pointers.
 class QPtrMatchMatrix[T <: CircularQueuePtr[T]](left: Seq[T], right: Seq[T]) {
-  val matrix = left.map(l => right.map(_.value === l.value))
+  val matrix = left.map(l => right.map(_ === l))
 
   def apply(leftIndex: Int, rightIndex: Int): Bool = {
     require(leftIndex < left.length && rightIndex < right.length)
