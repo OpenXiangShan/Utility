@@ -17,7 +17,7 @@
 package utility
 
 import chisel3._
-import chisel3.experimental.StringParam
+import chisel3.experimental.{IntParam, StringParam}
 import chisel3.util._
 
 trait HasTableUtils {
@@ -79,28 +79,34 @@ trait HasTableUtils {
   }
 }
 
-class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: T) extends HasTableUtils {
+class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: T, val tablePerHart: Boolean) extends HasTableUtils {
+
+  val hartIdNum = if (tablePerHart) HartIdHelper.getHartNum else 0
 
   def genCpp: (String, String) = {
     val cols = get_columns(hw, "").map(_.field)
+    val names = if (tablePerHart) (0 until hartIdNum).map(i => s"${tableName}_${i}") else IndexedSeq(tableName)
+    def InitBody(name: String): String =
+      s"""|const char *sql_${name} = "CREATE TABLE $name(" \\
+        |    "ID INTEGER PRIMARY KEY AUTOINCREMENT," \\
+        |    ${cols.map(c => "\"" + c.toUpperCase + " INT NOT NULL,\" \\").mkString("", "\n    ", "")}
+        |    "STAMP INT NOT NULL," \\
+        |    "SITE TEXT);";
+        |  rc = sqlite3_exec(mem_db, sql_${name}, callback, 0, &zErrMsg);
+        |  if(rc != SQLITE_OK) {
+        |    printf("SQL error: %s\\n", zErrMsg);
+        |    exit(0);
+        |  } else {
+        |    printf("%s table created successfully!\\n", "$name");
+        |  }
+        |""".stripMargin
     val init =
       s"""
          |void init_db_$tableName() {
          |  // create table
          |  if (!enable_dump_$tableName) return;
          |
-         |  const char *sql = "CREATE TABLE $tableName(" \\
-         |    "ID INTEGER PRIMARY KEY AUTOINCREMENT," \\
-         |    ${cols.map(c => "\"" + c.toUpperCase + " INT NOT NULL,\" \\").mkString("", "\n    ", "")}
-         |    "STAMP INT NOT NULL," \\
-         |    "SITE TEXT);";
-         |  rc = sqlite3_exec(mem_db, sql, callback, 0, &zErrMsg);
-         |  if(rc != SQLITE_OK) {
-         |    printf("SQL error: %s\\n", zErrMsg);
-         |    exit(0);
-         |  } else {
-         |    printf("%s table created successfully!\\n", "$tableName");
-         |  }
+         |  ${names.map(InitBody).mkString("", "  ", "")}
          |}
          |""".stripMargin
     val insert =
@@ -108,16 +114,20 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
          |extern "C" void ${tableName}_write(
          |  ${cols.map(c => "uint64_t " + c).mkString("", ",\n  ", ",")}
          |  uint64_t stamp,
-         |  char *site
+         |  char *site,
+         |  uint64_t hartId,
+         |  bool site_need_id
          |) {
          |  if(!dump || !enable_dump_$tableName) return;
          |
-         |  const char *format = "INSERT INTO $tableName(${cols.map(_.toUpperCase).mkString(",")}, STAMP, SITE) " \\
-         |                  "VALUES(${cols.map(_ => "%ld").mkString(", ")}, %ld, '%s');";
+         |  const char *format = "INSERT INTO ${tableName}${if (tablePerHart) "_%ld" else ""}(${cols.map(_.toUpperCase).mkString(",")}, STAMP, SITE) " \\
+         |                  "VALUES(${cols.map(_ => "%ld").mkString(", ")}, %ld, '%s%s');";
          |  char *sql = (char *)malloc(${cols.size + 1} * sizeof(uint64_t) + (strlen(format)+strlen(site)) * sizeof(char));
+         |  char site_id[8];
+         |  sprintf(site_id, "_%ld", hartId);
          |  sprintf(sql,
-         |    format,
-         |    ${cols.mkString(",")}, stamp, site
+         |    format,${if (tablePerHart) " hartId," else ""}
+         |    ${cols.mkString(",")}, stamp, site, site_need_id ? site_id : ""
          |  );
          |  rc = sqlite3_exec(mem_db, sql, callback, 0, &zErrMsg);
          |  free(sql);
@@ -136,15 +146,16 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
          |extern "C" void ${tableName}_write(
          |  ${cols.map(c => "uint64_t " + c).mkString("", ",\n  ", ",")}
          |  uint64_t stamp,
-         |  char *site
+         |  char *site,
+         |  uint64_t hartId
          |) {}
          |""".stripMargin
     if (envInFPGA) (init_dummy, insert_dummy) else (init, insert)
   }
 
-  def log(data: T, en: Bool, site: String = "", clock: Clock, reset: Reset): Unit = {
+  def log(data: T, en: Bool, site: String = "", clock: Clock, reset: Reset, siteNeedId: Boolean = false): Unit = {
     if(!envInFPGA){
-      val writer = Module(new TableWriteHelper[T](tableName, hw, site))
+      val writer = Module(new TableWriteHelper[T](tableName, hw, site, tablePerHart, siteNeedId))
       val cnt = RegInit(0.U(64.W))
       cnt := cnt + 1.U
       writer.io.clock := clock
@@ -156,19 +167,28 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
   }
 
   def log(data: Valid[T], site: String, clock: Clock, reset: Reset): Unit = {
-    log(data.bits, data.valid, site, clock, reset)
+    log(data, site, clock, reset, false)
+  }
+
+  def log(data: Valid[T], site: String, clock: Clock, reset: Reset, siteNeedId: Boolean): Unit = {
+    log(data.bits, data.valid, site, clock, reset, siteNeedId)
   }
 
   def log(data: DecoupledIO[T], site: String, clock: Clock, reset: Reset): Unit = {
-    log(data.bits, data.fire, site, clock, reset)
+    log(data, site, clock, reset, false)
+  }
+
+  def log(data: DecoupledIO[T], site: String, clock: Clock, reset: Reset, siteNeedId: Boolean): Unit = {
+    log(data.bits, data.fire, site, clock, reset, siteNeedId)
   }
 
 }
 
-private class TableWriteHelper[T <: Record](tableName: String, hw: T, site: String)
+private class TableWriteHelper[T <: Record](tableName: String, hw: T, site: String, tablePerHart: Boolean, siteNeedId: Boolean)
     extends BlackBox(
       Map(
-        "site" -> StringParam(site)
+        "site" -> StringParam(site),
+        "site_need_id" -> IntParam(if (siteNeedId) 1 else 0)
       )
     )
     with HasBlackBoxInline
@@ -195,7 +215,9 @@ private class TableWriteHelper[T <: Record](tableName: String, hw: T, site: Stri
        |(
        |${dpicInputs.map(x => "input longint " + x).mkString("  ", ",\n  ", ",")}
        |  input longint stamp,
-       |  input string site
+       |  input string site,
+       |  input longint hartId,
+       |  input bit site_need_id
        |);
        |
        |module $moduleName(
@@ -206,10 +228,13 @@ private class TableWriteHelper[T <: Record](tableName: String, hw: T, site: Stri
        |  input [63:0] stamp
        |);
        |  parameter string site = "undefined";
+       |  parameter site_need_id = 1'b0;
+       |
+       |  wire [63:0] hartId = ${if (tablePerHart || siteNeedId) "_hartIdDeclareModule.hartId" else "64'h0"};
        |
        |  always@(posedge clock) begin
        |    if(en && !reset) begin
-       |      $dpicFunc(${table.map(_.vExpr).mkString("", ", ", ", stamp, site")});
+       |      $dpicFunc(${table.map(_.vExpr).mkString("", ", ", ", stamp, site, hartId, site_need_id")});
        |    end
        |  end
        |endmodule
@@ -231,10 +256,10 @@ object ChiselDB {
     this.enable = enable
   }
 
-  def createTable[T <: Record](tableName: String, hw: T, basicDB: Boolean = false): Table[T] = {
+  def createTable[T <: Record](tableName: String, hw: T, basicDB: Boolean = this.enable, tablePerHart: Boolean = false): Table[T] = {
     getTable(tableName, hw)
       .getOrElse({
-        val t = new Table[T](!(basicDB & this.enable), tableName, hw)
+        val t = new Table[T](!(basicDB & this.enable), tableName, hw, tablePerHart)
         table_map += (tableName -> t)
         t
       })
