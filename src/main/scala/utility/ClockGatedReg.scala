@@ -23,14 +23,16 @@ import org.chipsalliance.cde.config.Parameters
 object GatedValidRegNext {
   // 3 is the default minimal width of EDA inserted clock gating cells.
   // so using `GatedValidRegNext` to signals whoes width is less than 3 may not help.
+  
+  // It is useless to clockgate only one bit, so change to RegNext here
   def apply(next: Bool, init: Bool = false.B): Bool = {
-    val last = Wire(Bool())
-    last := RegEnable(next, init, next || last)
+    val last = WireInit(false.B)
+    last := RegNext(next, init)
     last
   }
 
   def apply(last: Vec[Bool]): Vec[Bool] = {
-    val next = Wire(chiselTypeOf(last))
+    val next = VecInit(Seq.fill(last.size)(false.B))
     next := RegEnable(last, VecInit(Seq.fill(last.size)(false.B)), last.asUInt =/= next.asUInt)
     next
   }
@@ -51,7 +53,7 @@ object GatedValidRegNextN {
 object GatedRegNext{
   // Vec can be judged and assigned one by one
   def regEnableVec[T <: Data](lastVec: Vec[T], initOptVec: Option[Vec[T]]): Vec[T] = {
-    val nextVec = Wire(chiselTypeOf(lastVec))
+    val nextVec = WireInit(0.U.asTypeOf(lastVec))
     for (i <- 0 until lastVec.length) {
       initOptVec match {
         case Some(initVec) => nextVec(i) := RegEnable(lastVec(i), initVec(i), lastVec(i).asUInt =/= nextVec(i).asUInt)
@@ -64,7 +66,7 @@ object GatedRegNext{
   // NOTICE: The larger Data width , the longger time of =/= operations, which may lead to timing violations.
   // Callers need to consider timing requirements themselves.
   def apply[T <: Data](last: T, initOpt: Option[T] = None): T = {
-    val next = Wire(chiselTypeOf(last))
+    val next = WireInit(0.U.asTypeOf(last))
     last match {
       case v: Vec[_] =>
         next := regEnableVec(v.asInstanceOf[Vec[T]], initOpt.map(_.asInstanceOf[Vec[T]]))
