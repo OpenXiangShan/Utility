@@ -40,24 +40,16 @@ class ClockGate extends BlackBox with HasBlackBoxInline {
       |
       |  assign clk_en = E | TE;
       |
-      |`ifdef VCS
+      |`ifndef VERILATOR_LEGACY
       |  always @(CK or clk_en) begin
       |    if (CK == 1'b0)
       |      clk_en_reg <= clk_en;
       |  end
       |`else
-      |`ifdef VERILATOR_5
-      |  always @(CK or clk_en) begin
-      |    if (CK == 1'b0)
-      |      clk_en_reg <= clk_en;
+      |  always @(posedge CK) begin
+      |    clk_en_reg = clk_en;
       |  end
-      |`else
-      | always @(posedge CK) 
-      |   begin
-      |     clk_en_reg = clk_en;
-      |   end
-      |`endif // VERILATOR_5
-      |`endif // VCS
+      |`endif // VERILATOR_LEGACY
       |
       |  assign Q = CK & clk_en_reg;
       |
