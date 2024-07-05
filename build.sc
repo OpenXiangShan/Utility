@@ -1,16 +1,19 @@
 import mill._
 import scalalib._
 import scalafmt._
+import $file.`rocket-chip`.common
+import $file.`rocket-chip`.hardfloat.common
+import $file.`rocket-chip`.cde.common
 
 val defaultVersions = Map(
-  "chisel3" -> "3.6.0",
-  "chisel3-plugin" -> "3.6.0",
-  "chiseltest" -> "0.3.2",
+  "chisel" -> "6.1.0",
+  "chisel-plugin" -> "6.1.0",
+  "chiseltest" -> "5.0.0",
   "scala" -> "2.13.10",
   "scalatest" -> "3.2.7"
 )
 
-def getVersion(dep: String, org: String = "edu.berkeley.cs", cross: Boolean = false) = {
+def getVersion(dep: String, org: String = "org.chipsalliance", cross: Boolean = false) = {
   val version = sys.env.getOrElse(dep + "Version", defaultVersions(dep))
   if (cross)
     ivy"$org:::$dep:$version"
@@ -20,50 +23,98 @@ def getVersion(dep: String, org: String = "edu.berkeley.cs", cross: Boolean = fa
 
 trait CommonModule extends ScalaModule {
   override def scalaVersion = defaultVersions("scala")
-}
 
+  override def scalacPluginIvyDeps = Agg(getVersion("chisel-plugin", cross = true))
 
-object `rocket-chip` extends SbtModule with CommonModule {
-
-  override def ivyDeps = super.ivyDeps() ++ Agg(
-    ivy"${scalaOrganization()}:scala-reflect:${scalaVersion()}",
-    ivy"org.json4s::json4s-jackson:3.6.1",
-    getVersion("chisel3"),
-  )
-
-  object macros extends SbtModule with CommonModule
-
-  object cde extends CommonModule {
-    override def millSourcePath = super.millSourcePath / "cde" / "cde"
-  }
-
-  object hardfloat extends SbtModule with CommonModule {
-    override def ivyDeps = super.ivyDeps() ++ Agg(getVersion("chisel3"))
-  }
-
-  override def moduleDeps = super.moduleDeps ++ Seq(
-    cde, macros, hardfloat
-  )
+  override def scalacOptions = super.scalacOptions() ++ Agg("-Ymacro-annotations", "-Ytasty-reader")
 
 }
 
-object utility extends SbtModule with ScalafmtModule with CommonModule {
+object rocketchip extends RocketChip
 
-  override def millSourcePath = millOuterCtx.millSourcePath
+trait RocketChip
+  extends millbuild.`rocket-chip`.common.RocketChipModule
+    with SbtModule {
+  def scalaVersion: T[String] = T(defaultVersions("scala"))
 
+  override def millSourcePath = os.pwd / "rocket-chip"
+
+  def chiselModule = None
+
+  def chiselPluginJar = None
+
+  def chiselIvy = Some(getVersion("chisel"))
+
+  def chiselPluginIvy = Some(getVersion("chisel-plugin", cross = true))
+
+  def macrosModule = macros
+
+  def hardfloatModule = hardfloat
+
+  def cdeModule = cde
+
+  def mainargsIvy = ivy"com.lihaoyi::mainargs:0.5.0"
+
+  def json4sJacksonIvy = ivy"org.json4s::json4s-jackson:4.0.5"
+
+  object macros extends Macros
+
+  trait Macros
+    extends millbuild.`rocket-chip`.common.MacrosModule
+      with SbtModule {
+
+    def scalaVersion: T[String] = T(defaultVersions("scala"))
+
+    def scalaReflectIvy = ivy"org.scala-lang:scala-reflect:${defaultVersions("scala")}"
+  }
+
+  object hardfloat extends Hardfloat
+
+  trait Hardfloat
+    extends millbuild.`rocket-chip`.hardfloat.common.HardfloatModule {
+
+    def scalaVersion: T[String] = T(defaultVersions("scala"))
+
+    override def millSourcePath = os.pwd / "rocket-chip" / "hardfloat" / "hardfloat"
+
+    def chiselModule = None
+
+    def chiselPluginJar = None
+
+    def chiselIvy = Some(getVersion("chisel"))
+
+    def chiselPluginIvy = Some(getVersion("chisel-plugin", cross = true))
+  }
+
+  object cde extends CDE
+
+  trait CDE
+    extends millbuild.`rocket-chip`.cde.common.CDEModule
+      with ScalaModule {
+
+    def scalaVersion: T[String] = T(defaultVersions("scala"))
+
+    override def millSourcePath = os.pwd / "rocket-chip" / "cde" / "cde"
+  }
+}
+
+
+object xsutils extends SbtModule with ScalafmtModule with CommonModule {
+
+  override def millSourcePath = os.pwd
+
+  override def moduleDeps = super.moduleDeps ++ Seq(rocketchip)
 
   override def ivyDeps = super.ivyDeps() ++ Agg(
-    getVersion("chisel3"),
-    getVersion("chiseltest"),
+    getVersion("chisel"),
+    getVersion("chiseltest", "edu.berkeley.cs"),
   )
 
-  override def moduleDeps = super.moduleDeps ++ Seq(`rocket-chip`)
-
-  object test extends Tests {
+  object test extends SbtModuleTests with TestModule.ScalaTest {
     override def ivyDeps = super.ivyDeps() ++ Agg(
       getVersion("scalatest","org.scalatest")
     )
 
-    def testFrameworks = Seq("org.scalatest.tools.Framework")
+    def testFramework = "org.scalatest.tools.Framework"
   }
 }
