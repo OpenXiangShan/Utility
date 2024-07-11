@@ -387,11 +387,11 @@ object ChiselMap {
          |""".stripMargin
 
     val save =
+         // |  ${cmaps_name.map(mn => s"print_${mn}();").mkString("", "\n", "\n")}
       s"""
          |void save_maps(const char *zFilename_prefix) {
          |  printf("saving map to %s.mapName.csv ...\\n", zFilename_prefix);
          |  // TODO: how to save the map
-         |  ${cmaps_name.map(mn => s"print_${mn}();").mkString("", "\n", "\n")}
          |  ${cmaps_name.map(mn => s"save_${mn}(zFilename_prefix);").mkString("", "\n", "\n")}
          |}
          |""".stripMargin
