@@ -113,8 +113,8 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
          |  if(!dump || !enable_dump_$tableName) return;
          |
          |  const char *format = "INSERT INTO $tableName(${cols.map(_.toUpperCase).mkString(",")}, STAMP, SITE) " \\
-         |                  "VALUES(${cols.map(_ => "%ld").mkString(", ")}, %ld, '%s');";
-         |  char *sql = (char *)malloc(${cols.size + 1} * sizeof(uint64_t) + (strlen(format)+strlen(site)) * sizeof(char));
+         |                  "VALUES(${cols.map(_ => "%#lx").mkString(", ")}, %#lx, '%s');";
+         |  char *sql = (char *)malloc(${(cols.size + 1) * 2} * sizeof(uint64_t) + (strlen(format)+strlen(site)) * sizeof(char));
          |  sprintf(sql,
          |    format,
          |    ${cols.mkString(",")}, stamp, site
