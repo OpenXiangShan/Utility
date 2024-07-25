@@ -184,10 +184,17 @@ class MyMap[T <: Data, U <: Data](
          |
          |  file.close();
          |}
+         |
+         |extern "C" void clear_${cmap_name}() {
+         |  ${cmap_name}.clear();
+         |}
          |""".stripMargin
     val dummy =
       s"""
          |extern "C" void save_${cmap_name}(const char *filename_prefix) {
+         |
+         |}
+         |extern "C" void clear_${cmap_name}() {
          |
          |}
          |""".stripMargin
@@ -371,6 +378,7 @@ object ChiselMap {
       |
       |void init_map(bool en);
       |void save_maps(const char *filename_prefix);
+      |void warmup_save_maps(const char *filename_prefix);
       |
       |#endif
       |""".stripMargin
@@ -390,9 +398,15 @@ object ChiselMap {
          // |  ${cmaps_name.map(mn => s"print_${mn}();").mkString("", "\n", "\n")}
       s"""
          |void save_maps(const char *zFilename_prefix) {
-         |  printf("saving map to %s.mapName.csv ...\\n", zFilename_prefix);
+         |  printf("saving map after warming-up to %s.mapName.csv ...\\n", zFilename_prefix);
          |  // TODO: how to save the map
          |  ${cmaps_name.map(mn => s"save_${mn}(zFilename_prefix);").mkString("", "\n", "\n")}
+         |}
+         |void warmup_save_maps(const char *zFilename_prefix) {
+         |  printf("saving map in warmup interval to %s.mapName.csv ...\\n", zFilename_prefix);
+         |  ${cmaps_name.map(mn => s"save_${mn}(zFilename_prefix);").mkString("", "\n", "\n")}
+         |  printf("clear the chiselMap to save the map in the next interval\\n");
+         |  ${cmaps_name.map(mn => s"clear_${mn}();").mkString("", "\n", "\n")}
          |}
          |""".stripMargin
 
