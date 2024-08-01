@@ -16,7 +16,10 @@
 package utility
 
 import chisel3._
+import chisel3.experimental.BaseModule
 import chisel3.util.HasBlackBoxInline
+import chisel3.util.experimental.BoringUtils
+import scala.collection.mutable
 
 class ClockGate extends BlackBox with HasBlackBoxInline {
   val io = IO(new Bundle {
@@ -59,12 +62,37 @@ class ClockGate extends BlackBox with HasBlackBoxInline {
   setInline("ClockGate.v", verilog)
 }
 
+class CgteBundle extends Bundle {
+  val te = Input(Bool())
+}
+
 object ClockGate {
-  def apply(TE: Bool, E: Bool, CK: Clock) : Clock = {
-    val clock_gate = Module(new ClockGate).io
-    clock_gate.TE := TE
-    clock_gate.E  := E
-    clock_gate.CK := CK
-    clock_gate.Q
+  private val teBoringQueue = new mutable.Queue[CgteBundle]
+  private val hashModulesHasCgen = new mutable.Queue[BaseModule]
+
+  def apply(TE: Bool, E: Bool, CK: Clock): Clock = {
+    val module = Module.currentModule.get
+    val cgbd = if (hashModulesHasCgen.contains(module)) {
+      teBoringQueue.last
+    } else {
+      val cg = Wire(new CgteBundle)
+      cg.te := TE
+      dontTouch(cg)
+      teBoringQueue.append(cg)
+      hashModulesHasCgen.append(module)
+      cg
+    }
+    val clockGate = Module(new ClockGate)
+    clockGate.io.E := E
+    clockGate.io.TE := cgbd.te
+    clockGate.io.CK := CK
+    clockGate.io.Q
+  }
+
+  def getTop: CgteBundle = {
+    val cgen = Wire(new CgteBundle)
+    teBoringQueue.toSeq.foreach(BoringUtils.bore(_) := cgen)
+    teBoringQueue.clear()
+    cgen
   }
 }
