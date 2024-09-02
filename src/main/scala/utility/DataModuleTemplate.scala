@@ -125,7 +125,7 @@ class SyncDataModuleTemplate[T <: Data](
 
   val dataBanks = Seq.tabulate(numBanks)(i => {
     val bankEntries = if (i < numBanks - 1) maxBankEntries else numEntries - (i * maxBankEntries)
-    val dataBank = Module(new NegedgeDataModuleTemplate(dataType, bankEntries, numRead, numWrite, parentModule, perReadPortBypassEnable))
+    val dataBank = Module(new DataModuleTemplate(dataType, bankEntries, numRead, numWrite, parentModule, perReadPortBypassEnable))
 
     // delay one clock
     val raddr_dup = if (hasRen) {
@@ -160,7 +160,7 @@ class SyncDataModuleTemplate[T <: Data](
   }
 }
 
-class NegedgeDataModuleTemplate[T <: Data](
+class DataModuleTemplate[T <: Data](
   gen: T,
   numEntries: Int,
   numRead: Int,
@@ -176,7 +176,7 @@ class NegedgeDataModuleTemplate[T <: Data](
     val wdata = Vec(numWrite, Input(gen))
   })
 
-  override def desiredName: String = s"NegedgeDataModule_${parentModule}_${numEntries}entry"
+  override def desiredName: String = s"DataModule_${parentModule}_${numEntries}entry"
   val data = Reg(Vec(numEntries, gen))
 
   // if use bypassEnable to control bypass of each port,
