@@ -144,18 +144,25 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
     if (envInFPGA) (init_dummy, insert_dummy) else (init, insert)
   }
 
-  def log(data: T, en: Bool, site: String = "", clock: Clock, reset: Reset): Unit = {
+  def log(data: T, en: Bool, site: String, stamp: UInt, clock: Clock, reset: Reset): Unit = {
     if(!envInFPGA){
       val writer = Module(new TableWriteHelper[T](tableName, hw, site))
-      val cnt = RegInit(0.U(64.W))
-      cnt := cnt + 1.U
       writer.io.clock := clock
       writer.io.reset := reset
       writer.io.en := en
-      writer.io.stamp := cnt
+      writer.io.stamp := stamp
       writer.io.data := data
     }
   }
+
+  def log(data: T, en: Bool, site: String = "", clock: Clock, reset: Reset): Unit = {
+    if(!envInFPGA){
+      val cnt = RegInit(0.U(64.W))
+      cnt := cnt + 1.U
+      log(data, en, site, cnt, clock, reset)
+    }
+  }
+
 
   def log(data: Valid[T], site: String, clock: Clock, reset: Reset): Unit = {
     log(data.bits, data.valid, site, clock, reset)
