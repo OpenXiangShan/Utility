@@ -187,7 +187,7 @@ object GetEvenBits {
   }
   def reverse(input: UInt): UInt = {
     VecInit((0 until input.getWidth * 2).map(i => {
-      if(i % 2 == 0) input(i/2) else false.B 
+      if(i % 2 == 0) input(i/2) else false.B
     })).asUInt
   }
 }
@@ -199,7 +199,7 @@ object GetOddBits {
   }
   def reverse(input: UInt): UInt = {
     VecInit((0 until input.getWidth * 2).map(i => {
-      if(i % 2 == 0) false.B else input(i/2) 
+      if(i % 2 == 0) false.B else input(i/2)
     })).asUInt
   }
 }
@@ -351,11 +351,17 @@ object SelectOne {
 
 /**
  * SelectFirstN: select n index from bit mask, low bit has high priority.
+ * Params:
+ *   in: bit mask to select from
+ *   n: number of index to select
+ *   valid: when valid(i) is false, skip the i-th result
+ * Return:
+ *   n index, order from the low bit to high bit
  */
 object SelectFirstN {
   def apply(in: UInt, n: Int, valid: UInt) = {
     val sels = Wire(Vec(n, UInt(in.getWidth.W)))
-    var mask = in 
+    var mask = in
 
     for (i <- 0 until n) {
       sels(i) := PriorityEncoderOH(mask) & Fill(in.getWidth, valid(i))
@@ -363,5 +369,12 @@ object SelectFirstN {
     }
 
     sels
+  }
+
+  // Input is a bit mask, output is n index
+  // Priority from the low bit to high bit
+  def apply(in: Seq[Bool], n: Int): Seq[UInt] = {
+    val result = apply(Cat(in.reverse).asUInt, n, -1.S(n.W).asUInt)
+    result.map(PriorityEncoder(_))
   }
 }
