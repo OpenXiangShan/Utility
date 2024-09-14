@@ -18,11 +18,9 @@ package utility
 
 import chisel3._
 import chisel3.util._
+import org.chipsalliance.cde.config.Parameters
 
 import scala.math.min
-import freechips.rocketchip.diplomacy.RegionType
-import upickle.implicits.key
-import freechips.rocketchip.amba.axi4.AXI4Parameters.lenBits
 
 // Input: payload with agePtr, such as RobPtr
 // OtherInput:
@@ -34,7 +32,7 @@ class SpecPathDivider[T <: Data, C <: CircularQueuePtr[C]](
   val ptrGen: C,
   val inWidth: Int,
   val entries: Int
-) extends Module
+)(implicit val p: Parameters) extends Module
   with HasCircularQueuePtrHelper {
   val outWidth = min(inWidth * 2, entries)
   require(inWidth < entries)
@@ -80,7 +78,7 @@ class SpecPathDivider[T <: Data, C <: CircularQueuePtr[C]](
     for (i <- 0 until entries) {
       when (validQueue(i) && isBefore(io.redirectAgePtr.bits, agePtrQueue(i))) {
         stateQueue(i) := s_wrongPath
-        assert(stateQueue(i) =/= s_archPath, s"ArchPath $i is redirected")
+        XSError(stateQueue(i) === s_archPath, s"ArchPath $i is redirected")
       }
     }
   }
@@ -90,11 +88,11 @@ class SpecPathDivider[T <: Data, C <: CircularQueuePtr[C]](
     for (i <- 0 until entries) {
       when (validQueue(i) && isNotBefore(io.commitAgePtr.bits, agePtrQueue(i))) {
         stateQueue(i) := s_archPath
-        assert(stateQueue(i) =/= s_wrongPath, s"WrongPath $i is committed")
+        XSError(stateQueue(i) === s_wrongPath, s"WrongPath $i is committed")
       }
     }
   }
-  assert(!(io.redirectAgePtr.valid && io.commitAgePtr.valid && isBefore(io.redirectAgePtr.bits, io.commitAgePtr.bits)), "RedirectPtr Older than CommitPtr")
+  XSError((io.redirectAgePtr.valid && io.commitAgePtr.valid && isBefore(io.redirectAgePtr.bits, io.commitAgePtr.bits)), "RedirectPtr Older than CommitPtr")
 
   // IO Connections
   (0 until inWidth).foreach { i =>
@@ -108,7 +106,7 @@ class SpecPathDivider[T <: Data, C <: CircularQueuePtr[C]](
       stateQueue(inPtrVec(i)) :=
         Mux(committed, s_archPath,
         Mux(redirected, s_wrongPath, s_specPath))
-      assert(inReadyVec(i), "SpecPathDivider: input " + i + " is not ready")
+      XSError(!inReadyVec(i), "SpecPathDivider: input " + i + " is not ready")
     }
   }
 
@@ -136,7 +134,7 @@ object ChiselDBWithSpecDivide {
     clock: Clock,
     reset: Reset,
     basicDB: Boolean = false
-  ) {
+  )(implicit p: Parameters) {
     val divider = Module(new SpecPathDivider[T, C](chiselTypeOf(in.head.bits), chiselTypeOf(inAgePtr.head), in.length, entryNum))
     divider.io.in := in
     divider.io.inAgePtr := inAgePtr
@@ -180,7 +178,7 @@ object ChiselMapWithSpecDivide {
     clock: Clock,
     reset: Reset,
     basicDB: Boolean = false
-  ) {
+  )(implicit p: Parameters) {
     class PayLoadType extends Bundle {
       val key = chiselTypeOf(inKey.head)
       val value = chiselTypeOf(inValue.head)
