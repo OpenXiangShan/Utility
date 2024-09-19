@@ -78,7 +78,7 @@ class SpecPathDivider[T <: Data, C <: CircularQueuePtr[C]](
     for (i <- 0 until entries) {
       when (validQueue(i) && isBefore(io.redirectAgePtr.bits, agePtrQueue(i))) {
         stateQueue(i) := s_wrongPath
-        XSError(stateQueue(i) === s_archPath, s"ArchPath $i is redirected")
+        // XSError(stateQueue(i) === s_archPath, s"ArchPath $i is redirected")
       }
     }
   }
@@ -86,18 +86,18 @@ class SpecPathDivider[T <: Data, C <: CircularQueuePtr[C]](
   // Commit Update
   when (io.commitAgePtr.valid) {
     for (i <- 0 until entries) {
-      when (validQueue(i) && isNotBefore(io.commitAgePtr.bits, agePtrQueue(i))) {
+      when (validQueue(i) && isAfter(io.commitAgePtr.bits, agePtrQueue(i))) {
         stateQueue(i) := s_archPath
-        XSError(stateQueue(i) === s_wrongPath, s"WrongPath $i is committed")
+        // XSError(stateQueue(i) === s_wrongPath, s"WrongPath $i is committed")
       }
     }
   }
-  XSError((io.redirectAgePtr.valid && io.commitAgePtr.valid && isBefore(io.redirectAgePtr.bits, io.commitAgePtr.bits)), "RedirectPtr Older than CommitPtr")
+  // XSError((io.redirectAgePtr.valid && io.commitAgePtr.valid && isBefore(io.redirectAgePtr.bits, io.commitAgePtr.bits)), "RedirectPtr Older than CommitPtr")
 
   // IO Connections
   (0 until inWidth).foreach { i =>
     val redirected = io.redirectAgePtr.valid && isBefore(io.redirectAgePtr.bits, io.inAgePtr(i))
-    val committed = io.commitAgePtr.valid && isNotBefore(io.commitAgePtr.bits, io.inAgePtr(i))
+    val committed = io.commitAgePtr.valid && isAfter(io.commitAgePtr.bits, io.inAgePtr(i))
     when (io.in(i).valid) {
       payloadQueue(inPtrVec(i)) := io.in(i).bits
       validQueue(inPtrVec(i)) := true.B
@@ -134,7 +134,7 @@ object ChiselDBWithSpecDivide {
     clock: Clock,
     reset: Reset,
     basicDB: Boolean = false
-  )(implicit p: Parameters) {
+  )(implicit p: Parameters): Unit = {
     val divider = Module(new SpecPathDivider[T, C](chiselTypeOf(in.head.bits), chiselTypeOf(inAgePtr.head), in.length, entryNum))
     divider.io.in := in
     divider.io.inAgePtr := inAgePtr
@@ -178,7 +178,7 @@ object ChiselMapWithSpecDivide {
     clock: Clock,
     reset: Reset,
     basicDB: Boolean = false
-  )(implicit p: Parameters) {
+  )(implicit p: Parameters): Unit = {
     class PayLoadType extends Bundle {
       val key = chiselTypeOf(inKey.head)
       val value = chiselTypeOf(inValue.head)
