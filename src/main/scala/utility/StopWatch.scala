@@ -33,3 +33,20 @@ object BoolStopWatch {
   }
 }
 
+object StartStopCounter {
+  def apply(start: Bool, stop: Bool, init : BigInt, flush: Bool) = {
+    val counter = RegInit(0.U(64.W))
+    val working = RegInit(false.B)
+
+    when (working) { counter := counter + 1.U }
+    when (stop) {
+      working := false.B
+    }
+    when (start) {
+      counter := init.U
+      working := true.B
+    }
+    counter
+  }
+}
+
