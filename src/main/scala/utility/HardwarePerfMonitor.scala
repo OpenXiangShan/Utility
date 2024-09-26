@@ -19,6 +19,7 @@ package utility
 import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
+import utility.GatedRegNext
 
 class PerfEvent extends Bundle {
   val value = UInt(6.W)
@@ -31,7 +32,7 @@ trait HasPerfEvents { this: RawModule =>
   def generatePerfEvent(noRegNext: Option[Seq[Int]] = None): Unit = {
     for (((out, (name, counter)), i) <- io_perf.zip(perfEvents).zipWithIndex) {
       require(!name.contains("/"))
-      out.value := RegNext(RegNext(counter))
+      out.value := GatedRegNext(GatedRegNext(counter))
       if (noRegNext.isDefined && noRegNext.get.contains(i)) {
         out.value := counter
       }
