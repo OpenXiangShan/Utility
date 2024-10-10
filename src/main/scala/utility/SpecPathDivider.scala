@@ -31,7 +31,8 @@ class SpecPathDivider[T <: Data, C <: CircularQueuePtr[C]](
   val gen: T,
   val ptrGen: C,
   val inWidth: Int,
-  val entries: Int
+  val entries: Int,
+  val ageFilter: Boolean = true
 )(implicit val p: Parameters) extends Module
   with HasCircularQueuePtrHelper {
   val outWidth = min(inWidth * 2, entries)
@@ -52,17 +53,17 @@ class SpecPathDivider[T <: Data, C <: CircularQueuePtr[C]](
   val inputStamp = RegInit(0.U(64.W))
   inputStamp := inputStamp + 1.U
 
-  val s_specPath :: s_wrongPath :: s_archPath :: Nil = Enum(3)
+  val s_idle :: s_specPath :: s_wrongPath :: s_archPath :: Nil = Enum(4)
 
   val payloadQueue = Reg(Vec(entries, gen))
-  val validQueue = RegInit(VecInit(Seq.fill(entries)(false.B)))
-  val stateQueue = RegInit(VecInit(Seq.fill(entries)(s_specPath)))
+  val stateQueue = RegInit(VecInit(Seq.fill(entries)(s_idle)))
+  val validQueue = VecInit(stateQueue.map(state => state =/= s_idle))
   val stampQueue = Reg(Vec(entries, UInt(64.W)))
   val agePtrQueue = Reg(Vec(entries, ptrGen))
 
-  val readyInVec = VecInit(validQueue.map(_ =/= true.B))
-  val readyOutVec = VecInit(validQueue.zip(stateQueue).map {
-    case (valid, state) => valid && (state =/= s_specPath)
+  val readyInVec = VecInit(validQueue.map(!_))
+  val readyOutVec = VecInit(stateQueue.map {
+    case state => (state === s_wrongPath) || (state === s_archPath)
   })
 
   val inPtrVec = SelectFirstN(readyInVec, inWidth)
@@ -98,9 +99,13 @@ class SpecPathDivider[T <: Data, C <: CircularQueuePtr[C]](
   (0 until inWidth).foreach { i =>
     val redirected = io.redirectAgePtr.valid && isBefore(io.redirectAgePtr.bits, io.inAgePtr(i))
     val committed = io.commitAgePtr.valid && isAfter(io.commitAgePtr.bits, io.inAgePtr(i))
-    when (io.in(i).valid) {
+    val ageFiltered = if (!ageFilter) false.B
+      else validQueue.zip(agePtrQueue).map { case (valid, agePtr) =>
+          valid && agePtr === io.inAgePtr(i)
+        }.reduce(_ || _)
+
+    when (io.in(i).valid && !ageFiltered) {
       payloadQueue(inPtrVec(i)) := io.in(i).bits
-      validQueue(inPtrVec(i)) := true.B
       stampQueue(inPtrVec(i)) := inputStamp
       agePtrQueue(inPtrVec(i)) := io.inAgePtr(i)
       stateQueue(inPtrVec(i)) :=
@@ -117,7 +122,7 @@ class SpecPathDivider[T <: Data, C <: CircularQueuePtr[C]](
     io.outStamp(i) := stampQueue(outPtrVec(i))
 
     when (io.out(i).valid) {
-      validQueue(outPtrVec(i)) := false.B
+      stateQueue(outPtrVec(i)) := s_idle
     }
   }
 }
