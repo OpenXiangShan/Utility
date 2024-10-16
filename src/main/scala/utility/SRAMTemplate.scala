@@ -171,8 +171,7 @@ class SRAMTemplate[T <: Data](
   val (ren, wen) = (io.r.req.valid, io.w.req.valid || resetState)
   val realRen = (if (singlePort) ren && !wen else ren)
 
-  val maskedRClock = ClockGate(false.B, ren, clock)
-  val maskedWClock = ClockGate(false.B, wen, clock)
+  val maskedClock = ClockGate(false.B, ren || wen, clock)
 
   val setIdx = Mux(resetState, resetSet, io.w.req.bits.setIdx)
   val wdata = Mux(resetState, 0.U.asTypeOf(Vec(way, gen)), io.w.req.bits.data).
@@ -183,7 +182,7 @@ class SRAMTemplate[T <: Data](
     val waymask = Mux(resetState, Fill(way, "b1".U), io.w.req.bits.waymask.getOrElse("b1".U))
     when(wen) {
       if (withClockGate) {
-        array.write(setIdx, wdata, waymask.asBools, maskedWClock)
+        array.write(setIdx, wdata, waymask.asBools, maskedClock)
       } else {
         array.write(setIdx, wdata, waymask.asBools)
       }
@@ -192,7 +191,7 @@ class SRAMTemplate[T <: Data](
     val bitmask = Mux(resetState, Fill(way * gen.getWidth, "b1".U), io.w.req.bits.flattened_bitmask.getOrElse("b1".U))
     when(wen) {
       if (withClockGate) {
-        array.write(setIdx, wdata, bitmask.asBools, maskedWClock)
+        array.write(setIdx, wdata, bitmask.asBools, maskedClock)
       } else {
         array.write(setIdx, wdata, bitmask.asBools)
       }
@@ -201,7 +200,7 @@ class SRAMTemplate[T <: Data](
 
   // Memory read
   val raw_rdata = if (withClockGate) {
-    array.read(io.r.req.bits.setIdx, realRen, maskedRClock).asTypeOf(Vec(way, wordType))
+    array.read(io.r.req.bits.setIdx, realRen, maskedClock).asTypeOf(Vec(way, wordType))
   } else {
     array.read(io.r.req.bits.setIdx, realRen).asTypeOf(Vec(way, wordType))
   }
