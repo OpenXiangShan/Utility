@@ -46,6 +46,10 @@ object StartStopCounter {
       counter := init.U
       working := true.B
     }
+    when (flush) {
+      working := false.B
+      counter := 0.U
+    }
     counter
   }
 }
