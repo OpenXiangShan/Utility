@@ -34,6 +34,7 @@ package utility
 
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.diplomacy.ValName
 
 class SRAMBundleA(val set: Int) extends Bundle {
   val setIdx = Output(UInt(log2Up(set).W))
@@ -140,7 +141,7 @@ class SRAMTemplate[T <: Data](
   shouldReset: Boolean = false, extraReset: Boolean = false,
   holdRead: Boolean = false, bypassWrite: Boolean = false,
   useBitmask: Boolean = false,
-) extends Module {
+)(implicit valName: ValName) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
     val w = Flipped(new SRAMWriteBus(gen, set, way, useBitmask))
@@ -151,7 +152,7 @@ class SRAMTemplate[T <: Data](
   val arrayWidth = if (useBitmask) 1 else gen.getWidth
   val arrayType = UInt(arrayWidth.W)
   val arrayPortSize = if (useBitmask) way * gen.getWidth else way
-  val array = SyncReadMem(set, Vec(arrayPortSize, arrayType))
+  val array = SyncReadMem(set, Vec(arrayPortSize, arrayType)).suggestName(valName.name)
   val (resetState, resetSet) = (WireInit(false.B), WireInit(0.U))
 
   if (shouldReset) {
@@ -229,7 +230,7 @@ class FoldedSRAMTemplate[T <: Data](
   shouldReset: Boolean = false, extraReset: Boolean = false,
   holdRead: Boolean = false, singlePort: Boolean = false,
   bypassWrite: Boolean = false, useBitmask: Boolean = false,
-) extends Module {
+)(implicit valName: ValName) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
     val w = Flipped(new SRAMWriteBus(gen, set, way, useBitmask))
@@ -286,8 +287,10 @@ class FoldedSRAMTemplate[T <: Data](
     array.io.w.apply(wen, wdata, waddr, wmask)
   }
 }
-class SRAMTemplateWithArbiter[T <: Data](nRead: Int, gen: T, set: Int, way: Int = 1,
-  shouldReset: Boolean = false) extends Module {
+class SRAMTemplateWithArbiter[T <: Data](
+  nRead: Int, gen: T, set: Int, way: Int = 1,
+  shouldReset: Boolean = false
+)(implicit valName: ValName) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(Vec(nRead, new SRAMReadBus(gen, set, way)))
     val w = Flipped(new SRAMWriteBus(gen, set, way))
