@@ -139,7 +139,7 @@ class SRAMTemplate[T <: Data](
   gen: T, set: Int, way: Int = 1, singlePort: Boolean = false,
   shouldReset: Boolean = false, extraReset: Boolean = false,
   holdRead: Boolean = false, bypassWrite: Boolean = false,
-  useBitmask: Boolean = false,
+  useBitmask: Boolean = false, withClockGate: Boolean = false,
 ) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
@@ -171,6 +171,19 @@ class SRAMTemplate[T <: Data](
   val (ren, wen) = (io.r.req.valid, io.w.req.valid || resetState)
   val realRen = (if (singlePort) ren && !wen else ren)
 
+  val maskedRClock = Wire(Clock())
+  val maskedWClock = Wire(Clock())
+
+  if (singlePort) { 
+    // To ensure the generation of single-port SRAM, the RCLK and WCLK must be the same.
+    val maskedClock = ClockGate(false.B, ren || wen, clock)
+    maskedRClock := maskedClock
+    maskedWClock := maskedClock
+  } else {
+    maskedRClock := ClockGate(false.B, ren, clock)
+    maskedWClock := ClockGate(false.B, wen, clock)
+  }
+
   val setIdx = Mux(resetState, resetSet, io.w.req.bits.setIdx)
   val wdata = Mux(resetState, 0.U.asTypeOf(Vec(way, gen)), io.w.req.bits.data).
     asTypeOf(Vec(arrayPortSize, arrayType))
@@ -179,17 +192,29 @@ class SRAMTemplate[T <: Data](
   if (!useBitmask) {
     val waymask = Mux(resetState, Fill(way, "b1".U), io.w.req.bits.waymask.getOrElse("b1".U))
     when(wen) {
-      array.write(setIdx, wdata, waymask.asBools)
+      if (withClockGate) {
+        array.write(setIdx, wdata, waymask.asBools, maskedWClock)
+      } else {
+        array.write(setIdx, wdata, waymask.asBools)
+      }
     }
   } else {
     val bitmask = Mux(resetState, Fill(way * gen.getWidth, "b1".U), io.w.req.bits.flattened_bitmask.getOrElse("b1".U))
     when(wen) {
-      array.write(setIdx, wdata, bitmask.asBools)
+      if (withClockGate) {
+        array.write(setIdx, wdata, bitmask.asBools, maskedWClock)
+      } else {
+        array.write(setIdx, wdata, bitmask.asBools)
+      }
     }
   }
 
   // Memory read
-  val raw_rdata = array.read(io.r.req.bits.setIdx, realRen).asTypeOf(Vec(way, wordType))
+  val raw_rdata = if (withClockGate) {
+    array.read(io.r.req.bits.setIdx, realRen, maskedRClock).asTypeOf(Vec(way, wordType))
+  } else {
+    array.read(io.r.req.bits.setIdx, realRen).asTypeOf(Vec(way, wordType))
+  }
   require(wdata.getWidth == raw_rdata.getWidth)
 
   // bypass for dual-port SRAMs
@@ -229,6 +254,7 @@ class FoldedSRAMTemplate[T <: Data](
   shouldReset: Boolean = false, extraReset: Boolean = false,
   holdRead: Boolean = false, singlePort: Boolean = false,
   bypassWrite: Boolean = false, useBitmask: Boolean = false,
+  withClockGate: Boolean = false,
 ) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
@@ -246,7 +272,8 @@ class FoldedSRAMTemplate[T <: Data](
 
   val array = Module(new SRAMTemplate(gen, set=nRows, way=width*way,
     shouldReset=shouldReset, extraReset=extraReset, holdRead=holdRead,
-    singlePort=singlePort, bypassWrite=bypassWrite, useBitmask=useBitmask))
+    singlePort=singlePort, bypassWrite=bypassWrite, useBitmask=useBitmask,
+    withClockGate=withClockGate))
   if (array.extra_reset.isDefined) {
     array.extra_reset.get := extra_reset.get
   }
