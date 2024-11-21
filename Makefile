@@ -3,7 +3,7 @@ init:
 	cd rocket-chip && git submodule update --init hardfloat cde
 
 compile:
-	mill -i utility.compile
+	mill -i utility[chisel].compile
 
 idea:
 	mill -i mill.scalalib.GenIdea/idea
