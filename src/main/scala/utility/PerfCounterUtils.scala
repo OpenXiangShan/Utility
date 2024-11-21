@@ -45,9 +45,9 @@ object XSPerfAccumulate extends HasRegularPerfName {
   def apply(perfName: String, perfCnt: UInt)(implicit p: Parameters): Unit = {
     judgeName(perfName)
     if (p(PerfCounterOptionsKey).enablePerfPrint) {
-      val helper = Module(new LogPerfHelper)
-      val perfClean = helper.io.clean
-      val perfDump = helper.io.dump
+      val helper = LogPerfControl()
+      val perfClean = helper.clean
+      val perfDump = helper.dump
 
       val counter = RegInit(0.U(64.W)).suggestName(perfName + "Counter")
       val next_counter = WireInit(0.U(64.W)).suggestName(perfName + "Next")
@@ -55,7 +55,7 @@ object XSPerfAccumulate extends HasRegularPerfName {
       counter := Mux(perfClean, 0.U, next_counter)
 
       when (perfDump) {
-        XSPerfPrint(p"$perfName, $next_counter\n")(helper.io)
+        XSPerfPrint(p"$perfName, $next_counter\n")(helper)
       }
     }
   }
@@ -78,9 +78,9 @@ object XSPerfHistogram extends HasRegularPerfName {
   (implicit p: Parameters): Unit = {
     judgeName(perfName)
     if (p(PerfCounterOptionsKey).enablePerfPrint) {
-      val helper = Module(new LogPerfHelper)
-      val perfClean = helper.io.clean
-      val perfDump = helper.io.dump
+      val helper = LogPerfControl()
+      val perfClean = helper.clean
+      val perfDump = helper.dump
 
       val sum = RegInit(0.U(64.W)).suggestName(perfName + "Sum")
       val nSamples = RegInit(0.U(64.W)).suggestName(perfName + "NSamples")
@@ -103,11 +103,11 @@ object XSPerfHistogram extends HasRegularPerfName {
       }
 
       when (perfDump) {
-        XSPerfPrint(p"${perfName}_sum, ${sum}\n")(helper.io)
-        XSPerfPrint(p"${perfName}_mean, ${sum/nSamples}\n")(helper.io)
-        XSPerfPrint(p"${perfName}_sampled, ${nSamples}\n")(helper.io)
-        XSPerfPrint(p"${perfName}_underflow, ${underflow}\n")(helper.io)
-        XSPerfPrint(p"${perfName}_overflow, ${overflow}\n")(helper.io)
+        XSPerfPrint(p"${perfName}_sum, ${sum}\n")(helper)
+        XSPerfPrint(p"${perfName}_mean, ${sum/nSamples}\n")(helper)
+        XSPerfPrint(p"${perfName}_sampled, ${nSamples}\n")(helper)
+        XSPerfPrint(p"${perfName}_underflow, ${underflow}\n")(helper)
+        XSPerfPrint(p"${perfName}_overflow, ${overflow}\n")(helper)
       }
 
       // drop each perfCnt value into a bin
@@ -142,7 +142,7 @@ object XSPerfHistogram extends HasRegularPerfName {
         }
 
         when (perfDump) {
-          XSPerfPrint(p"${histName}, $counter\n")(helper.io)
+          XSPerfPrint(p"${histName}, $counter\n")(helper)
         }
       }
     }
@@ -153,16 +153,16 @@ object XSPerfMax extends HasRegularPerfName {
   def apply(perfName: String, perfCnt: UInt, enable: Bool)(implicit p: Parameters): Unit = {
     judgeName(perfName)
     if (p(PerfCounterOptionsKey).enablePerfPrint) {
-      val helper = Module(new LogPerfHelper)
-      val perfClean = helper.io.clean
-      val perfDump = helper.io.dump
+      val helper = LogPerfControl()
+      val perfClean = helper.clean
+      val perfDump = helper.dump
 
       val max = RegInit(0.U(64.W))
       val next_max = Mux(enable && (perfCnt > max), perfCnt, max)
       max := Mux(perfClean, 0.U, next_max)
 
       when (perfDump) {
-        XSPerfPrint(p"${perfName}_max, $next_max\n")(helper.io)
+        XSPerfPrint(p"${perfName}_max, $next_max\n")(helper)
       }
     }
   }
