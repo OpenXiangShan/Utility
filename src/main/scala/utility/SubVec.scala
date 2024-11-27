@@ -44,7 +44,7 @@ object SubVec{
     (0 until mod).map { rem => getRemWithExpand(in, mod, rem) }
   }
 
-  // MaskRem: SubSeq = RemMask & Seq(RemIdx)
+  // MaskRem: MaskSeq = RemMask & Seq(RemIdx)
   // NOTE: logical size is big
   def getMaskRem(in: Vec[Bool], mod: Int, rem: Int): Vec[Bool] = {
     val out = WireInit(0.U.asTypeOf(in))
