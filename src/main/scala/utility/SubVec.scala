@@ -25,15 +25,16 @@ object SubVec{
   // NOTE: must be divisible
   def getRem[T <: Data](in: Seq[T], mod: Int, rem: Int): Seq[T] = {
     require(in.size % mod == 0)
+    require(mod > rem)
     (0 until in.size / mod).map(i => {in(mod * i + rem)})
   }
   def getRems[T <: Data](in: Seq[T], mod: Int): Seq[Seq[T]] = {
-    require(in.size % mod == 0)
     (0 until mod).map { rem => getRem(in, mod, rem) }
   }
 
   // RemWithExpand: SubSeqWithExpand = (Seq % Modulus expanded)(Remainder)
   def getRemWithExpand(in: Seq[Bool], mod: Int, rem: Int): Seq[Bool] = {
+    require(mod > rem)
     val subSize = in.size / mod + 1
     (0 until subSize).map {i =>
       val idx = mod * i + rem
@@ -47,6 +48,7 @@ object SubVec{
   // MaskRem: MaskSeq = RemMask & Seq(RemIdx)
   // NOTE: logical size is big
   def getMaskRem(in: Vec[Bool], mod: Int, rem: Int): Vec[Bool] = {
+    require(mod > rem)
     val out = WireInit(0.U.asTypeOf(in))
     (0 until in.size).map(i => { if(i % mod == rem) out(i) := in(i) else out(i) := false.B})
     out
