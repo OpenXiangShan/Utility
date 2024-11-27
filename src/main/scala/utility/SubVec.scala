@@ -45,7 +45,7 @@ object SubVec{
   }
 
   // MaskRem: SubSeq = RemMask & Seq(RemIdx)
-  // NOTE: logical size  big
+  // NOTE: logical size is big
   def getMaskRem(in: Vec[Bool], mod: Int, rem: Int): Vec[Bool] = {
     val out = WireInit(0.U.asTypeOf(in))
     (0 until in.size).map(i => { if(i % mod == rem) out(i) := in(i) else out(i) := false.B})
