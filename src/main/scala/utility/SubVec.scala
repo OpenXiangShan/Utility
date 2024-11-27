@@ -26,21 +26,21 @@ object SubVec{
     require(mod > rem)
     (0 until in.size / mod).map(i => {in(mod * i + rem)})
   }
-  def getRems[T <: Data](in: Seq[T], mod: Int): Seq[Seq[T]] = {
+  def getRem[T <: Data](in: Seq[T], mod: Int): Seq[Seq[T]] = {
     (0 until mod).map { rem => getRem(in, mod, rem) }
   }
 
-  // RemWithExpand: SubSeqWithExpand = (Seq % Modulus expanded)(Remainder)
-  def getRemWithExpand(in: Seq[Bool], mod: Int, rem: Int): Seq[Bool] = {
+  // RemWithExpansion: SubSeqWithExpansion = (Seq % Modulus expanded)(Remainder)
+  def getRemWithExpansion[T <: Data](in: Seq[T], mod: Int, rem: Int): Seq[T] = {
     require(mod > rem)
     val subSize = in.size / mod + 1
     (0 until subSize).map {i =>
       val idx = mod * i + rem
-      if (idx < in.size) in(idx) else false.B
+      if (idx < in.size) in(idx) else 0.U.asTypeOf(in(0))
     }
   }
-  def getRemWithExpands(in: Seq[Bool], mod: Int): Seq[Seq[Bool]] = {
-    (0 until mod).map { rem => getRemWithExpand(in, mod, rem) }
+  def getRemWithExpansion[T <: Data](in: Seq[T], mod: Int): Seq[Seq[T]] = {
+    (0 until mod).map { rem => getRemWithExpansion(in, mod, rem) }
   }
 
   // MaskRem: MaskSeq = RemMask & Seq(RemIdx)
@@ -51,7 +51,7 @@ object SubVec{
     (0 until in.size).map(i => { if(i % mod == rem) out(i) := in(i) else out(i) := false.B})
     out
   }
-  def getMaskRems(in: Vec[Bool], mod: Int): Vec[Vec[Bool]] = {
+  def getMaskRem(in: Vec[Bool], mod: Int): Vec[Vec[Bool]] = {
     VecInit((0 until mod).map(rem => getMaskRem(in, mod, rem)))
   }
 
