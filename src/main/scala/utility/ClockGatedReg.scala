@@ -135,12 +135,12 @@ object GatedRegNextN {
   }
 }
 
-class SegmentedAddr(_segments: Seq[Int]) {
+class SegmentedAddr(_segments: Seq[Int]) extends Bundle {
 
   def this(f: Parameters => Seq[Int])(implicit p: Parameters) = this(f(p))
 
   val segments = _segments // (High, Lower ...)
-  private var addr = UInt(segments.sum.W)
+  val addr: UInt = UInt(segments.sum.W)
 
   // [High, Lower ...]
   private def segment(addrIn: UInt): Seq[UInt] = {
@@ -154,14 +154,6 @@ class SegmentedAddr(_segments: Seq[Int]) {
   }
   def getAddrSegments(): Seq[UInt] = {
     segment(addr)
-  }
-  def fromSegments(seg: Seq[UInt]) = {
-    this.addr = seg.reduce(Cat(_, _))
-    this
-  }
-  def fromAddr(addrIn: UInt) = {
-    this.addr = addrIn
-    this
   }
 
   def compare(that: SegmentedAddr): Seq[Bool] = {
@@ -177,6 +169,20 @@ class SegmentedAddr(_segments: Seq[Int]) {
   }
 }
 
+object SegmentedAddrInit {
+  def apply(segments: Seq[Int], addr: UInt): SegmentedAddr = {
+    val segmentedAddr = Wire(new SegmentedAddr(segments))
+    segmentedAddr.addr := addr
+    segmentedAddr
+  }
+
+  def apply(segments: Seq[Int], seg: Seq[UInt]): SegmentedAddr = {
+    val segmentedAddr = Wire(new SegmentedAddr(segments))
+    segmentedAddr.addr := seg.reduce(Cat(_, _))
+    segmentedAddr
+  }
+}
+
 object SegmentedAddrNext {
   def apply(addr: SegmentedAddr): SegmentedAddr = {
     apply(addr, true.B, None)
@@ -188,22 +194,22 @@ object SegmentedAddrNext {
 
   def apply(addr: UInt, segments: Seq[Int], fire: Bool, parentName: Option[String]): SegmentedAddr = {
     // Input wire, segmented
-    val segmented = new SegmentedAddr(segments).fromAddr(addr).getAddrSegments()
+    val segmented = SegmentedAddrInit(segments, addr).getAddrSegments()
 
     val modified = Wire(Vec(segmented.length, Bool()))
 
     val segmentedNext = segments zip segmented zip modified.zipWithIndex map {
       case ((segLength, seg), (modified, idx)) =>
-      // Must init here to avoid X state
-      RegEnable(seg, 0.U(segLength.W), modified && fire)
-        .suggestName(s"${parentName.getOrElse("")}_seg_${idx}_value")
+        // Must init here to avoid X state
+        RegEnable(seg, 0.U(segLength.W), modified && fire)
+          .suggestName(s"${parentName.getOrElse("")}_seg_${idx}_value")
     }
     modified zip segmentedNext zip segmented map {
       case ((m, next), now) => m := next =/= now
     }
     modified.last := true.B // Assume lower part often changes
 
-    val seg = new SegmentedAddr(segments).fromSegments(segmentedNext)
+    val seg = SegmentedAddrInit(segments, segmentedNext)
     if (parentName.isDefined) {
       val debug_addr = WireDefault(seg.getAddr()).suggestName(s"debug_${parentName.get}_addr")
       val debug_modified = modified.suggestName(s"debug_${parentName.get}_modified")
@@ -213,13 +219,13 @@ object SegmentedAddrNext {
 
     seg
   }
-  
+
   def dupAddrs(addrs: Seq[UInt], segments: Seq[Int], fire: Bool, parentName: Option[String]): Seq[SegmentedAddr] = {
     // Input wire, segmented
     val dupSegmented = segments.zipWithIndex.map { case (segLength, idx) =>
-      addrs.map(addr => new SegmentedAddr(segments).fromAddr(addr).getAddrSegments()(idx))
+      addrs.map(addr => SegmentedAddrInit(segments, addr).getAddrSegments()(idx))
     }
-    // dupSegmented(segIdx)(dupIdx), 
+    // dupSegmented(segIdx)(dupIdx),
     // dupSegmented = Seq(
     //   Seq(seg0_addr0, seg0_addr1, seg0_addr2, seg0_addr3),  // first  segment results of each addr after segmentation
     //   Seq(seg1_addr0, seg1_addr1, seg1_addr2, seg1_addr3),  // second segment results of each addr after segmentation
@@ -252,7 +258,7 @@ object SegmentedAddrNext {
     //   Seq(addr3_seg0, addr3_seg1, addr3_seg2)   // segmented result of addr(3)
     // )
     val result = dupSegmentedNext.transpose.map { segs =>
-      new SegmentedAddr(segments).fromSegments(segs)
+      SegmentedAddrInit(segments, segs)
     }
     result
   }
