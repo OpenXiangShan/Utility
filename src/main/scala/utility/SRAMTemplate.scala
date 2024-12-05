@@ -254,7 +254,7 @@ class FoldedSRAMTemplate[T <: Data](
   shouldReset: Boolean = false, extraReset: Boolean = false,
   holdRead: Boolean = false, singlePort: Boolean = false,
   bypassWrite: Boolean = false, useBitmask: Boolean = false,
-  withClockGate: Boolean = false,
+  withClockGate: Boolean = false, avoidSameAddr: Boolean = false,
 ) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
@@ -288,22 +288,69 @@ class FoldedSRAMTemplate[T <: Data](
   array.io.r.req.valid := ren
   array.io.r.req.bits.setIdx := raddr
 
+  //Double port read and write to the same address to avoid
+  val w_req      = io.w.req.valid
+  val w_data     = io.w.req.bits.data
+  val w_addr     = io.w.req.bits.setIdx >> log2Ceil(width)
+  val w_widthIdx = if (width != 1) io.w.req.bits.setIdx(log2Ceil(width)-1, 0) else 0.U
+  val w_waymask  = if(way > 1 ) io.w.req.bits.waymask.get else 0.U
+
+  val conflict_valid    = WireInit(false.B)
+  val conflict_addr     = WireInit(0.U.asTypeOf(w_addr))
+  val conflict_data     = WireInit(0.U.asTypeOf(w_data))
+  val conflict_widthIdx = WireInit(0.U.asTypeOf(w_widthIdx))
+  val conflict_waymask  = WireInit(0.U.asTypeOf(w_waymask))
+
+  val write_conflict    = w_req && ren && w_addr === raddr
+  val can_write         = conflict_valid && (conflict_addr =/= raddr || !ren)
+  val use_conflict_data = conflict_valid && conflict_addr === RegEnable(raddr, io.r.req.valid) && conflict_widthIdx === ridx
+
+  if (!singlePort && avoidSameAddr) {
+    //Cache write port data and wait for addresses to not conflict
+    val b_valid    = RegInit(false.B)
+    val b_addr     = RegInit(0.U.asTypeOf(w_addr))
+    val b_data     = RegInit(0.U.asTypeOf(w_data))
+    val b_widthIdx = RegInit(0.U.asTypeOf(w_widthIdx))
+    val b_waymask  = RegInit(0.U.asTypeOf(w_waymask))
+    when(write_conflict) {
+      b_valid    := true.B
+      b_addr     := w_addr
+      b_data     := w_data
+      b_widthIdx := w_widthIdx
+      b_waymask  := w_waymask
+    }
+    when(can_write) {
+      b_valid := false.B
+    }
+    conflict_valid    := b_valid
+    conflict_addr     := b_addr
+    conflict_data     := b_data
+    conflict_widthIdx := b_widthIdx
+    conflict_waymask  := b_waymask
+  }
+
+  val resp_data = WireInit(0.U.asTypeOf(io.r.resp.data))
   val rdata = array.io.r.resp.data
   for (w <- 0 until way) {
     val wayData = VecInit(rdata.indices.filter(_ % way == w).map(rdata(_)))
     val holdRidx = HoldUnless(ridx, GatedValidRegNext(io.r.req.valid))
     val realRidx = if (holdRead) holdRidx else ridx
-    io.r.resp.data(w) := Mux1H(UIntToOH(realRidx, width), wayData)
+    resp_data(w) := Mux1H(UIntToOH(realRidx, width), wayData)
   }
+  io.r.resp.data := Mux(use_conflict_data, conflict_data, resp_data)
 
-  val wen = io.w.req.valid
-  val wdata = VecInit(Seq.fill(width)(io.w.req.bits.data).flatten)
-  val waddr = io.w.req.bits.setIdx >> log2Ceil(width)
-  val widthIdx = if (width != 1) io.w.req.bits.setIdx(log2Ceil(width)-1, 0) else 0.U
+  val wen = if (!singlePort && avoidSameAddr) (io.w.req.valid && !write_conflict) || can_write else w_req
+  val waddr = if (!singlePort && avoidSameAddr) Mux(conflict_valid, conflict_addr, w_addr) else w_addr
+  val wdata = VecInit(Seq.fill(width)(
+    if (!singlePort && avoidSameAddr) Mux(conflict_valid, conflict_data, w_data)
+    else w_data
+  ).flatten)
+  val widthIdx = if (!singlePort && avoidSameAddr) Mux(conflict_valid, conflict_widthIdx, w_widthIdx) else w_widthIdx
+  val waymask = if (!singlePort && avoidSameAddr) Mux(conflict_valid, conflict_waymask, w_waymask) else w_waymask
   val wmask = (width, way) match {
     case (1, 1) => 1.U(1.W)
     case (x, 1) => UIntToOH(widthIdx)
-    case _      => VecInit(Seq.tabulate(width*way)(n => (n / way).U === widthIdx && io.w.req.bits.waymask.get(n % way))).asUInt
+    case _      => VecInit(Seq.tabulate(width*way)(n => (n / way).U === widthIdx && waymask(n % way))).asUInt
   }
   require(wmask.getWidth == way*width)
 
