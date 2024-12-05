@@ -63,7 +63,10 @@ trait HasDPICUtils extends BlackBox with HasBlackBoxInline {
       |${ports_input.map(x => "input [63:0] " + x).mkString("", ",\n", "")}
       |);
       |  always@(posedge clock) begin
-      |    if(en && !reset) begin
+      |    if (reset) begin
+      |      ${if (has_out) port_output + "<= 0" else ""};
+      |    end
+      |    else if(en) begin
       |      ${if (has_out) port_output + "<=" else "  "}$dpicFunc(${ports_input.mkString("", ", ", "")});
       |    end
       |  end
@@ -258,14 +261,16 @@ class InstMeta
 class PerfCCT
 {
     const int MaxMetas = 1500;
-    uint64_t sn_acc = 1;
+    uint64_t sn_acc = 10;
 
     std::vector<InstMeta> metas;
+    InstMeta invalidMeta;
 
     std::stringstream ss;
     std::string sql_insert_cmd;
 
     InstMeta* getMeta(uint64_t sn) {
+      if (sn == 0) [[unlikely]] return &invalidMeta;
       return &metas[sn%MaxMetas];
     }
 
@@ -273,6 +278,7 @@ class PerfCCT
     PerfCCT() {
       #if ${enableCCT.toString()}
       metas.resize(MaxMetas);
+      invalidMeta.reset(0, 0, 0);
 
       ss << "INSERT INTO LifeTimeCommitTrace(";
       ss << ${InstPos.values.mkString("\"", ",", ",")}${InstRecord.values.mkString("", ",", "\"")};
@@ -339,6 +345,7 @@ class PerfCCT
       if (!enable_dump_lifetime) [[likely]] return;
 
       auto meta = getMeta(sn);
+      if (meta == &invalidMeta) [[unlikely]] return;
       meta->posTick.at(AtCommit) = global_sim_tick;
       ss << sql_insert_cmd;
       ss << meta->posTick[0];
