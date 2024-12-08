@@ -49,7 +49,7 @@ object XSLog {
     val enableDebug = logOpts.enableDebug && debugLevel != XSLogLevel.PERF
     val enablePerf = logOpts.enablePerf && debugLevel == XSLogLevel.PERF
     if (!logOpts.fpgaPlatform && (enableDebug || enablePerf || debugLevel == XSLogLevel.ERROR)) {
-      val ctrlInfo = ctrlInfoOpt.getOrElse(Module(new LogPerfHelper).io)
+      val ctrlInfo = ctrlInfoOpt.getOrElse(LogPerfControl())
       val logEnable = ctrlInfo.logEnable
       val logTimestamp = ctrlInfo.timer
       val check_cond = (if (debugLevel == XSLogLevel.ERROR) true.B else logEnable) && cond

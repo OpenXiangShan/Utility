@@ -2,6 +2,7 @@ package utility
 
 import chisel3._
 import chisel3.util.HasBlackBoxInline
+import chisel3.reflect.DataMirror.isVisible
 
 class LogPerfIO extends Bundle {
   val timer = UInt(64.W)
@@ -36,4 +37,11 @@ class LogPerfHelper extends BlackBox with HasBlackBoxInline {
       |
       |""".stripMargin
   setInline("LogPerfHelper.v", verilog)
+}
+
+object LogPerfControl {
+  private val instances = scala.collection.mutable.ListBuffer.empty[LogPerfIO]
+  private def instantiate(): LogPerfIO = instances.addOne(WireInit(Module(new LogPerfHelper).io)).last
+
+  def apply(): LogPerfIO = instances.find(gen => isVisible(gen)).getOrElse(instantiate())
 }
