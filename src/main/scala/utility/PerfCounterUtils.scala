@@ -18,7 +18,11 @@ package utility
 
 import chisel3._
 import chisel3.util._
+import chisel3.util.experimental.BoringUtils.tapAndRead
+import chisel3.reflect.DataMirror.isVisible
 import org.chipsalliance.cde.config.{Field, Parameters}
+
+import scala.collection.mutable.ListBuffer
 
 case object PerfCounterOptionsKey extends Field[PerfCounterOptions]
 case class PerfCounterOptions
@@ -41,29 +45,40 @@ trait HasRegularPerfName {
   }
 }
 
-object XSPerfAccumulate extends HasRegularPerfName {
+trait TapData {
+  def tap[T <: Data](data: T): T ={
+    if (isVisible(data)) data else tapAndRead(data)
+  }
+}
+
+object XSPerfAccumulate extends HasRegularPerfName with TapData {
+  private val perfInfos = ListBuffer.empty[(String, UInt)]
   def apply(perfName: String, perfCnt: UInt)(implicit p: Parameters): Unit = {
     judgeName(perfName)
     if (p(PerfCounterOptionsKey).enablePerfPrint) {
-      val helper = Module(new LogPerfHelper)
-      val perfClean = helper.io.clean
-      val perfDump = helper.io.dump
-
+      if(perfInfos.isEmpty) XSLog.registerCaller(LogPerfIO => collect(LogPerfIO))
+      perfInfos += ((perfName, perfCnt))
+    }
+  }
+  def collect(ctrl: LogPerfIO)(implicit p: Parameters): Unit = {
+    perfInfos.foreach{ case (perfName, perfCnt_bore) =>
+      val perfCnt = tap(perfCnt_bore)
+      val perfClean = ctrl.clean
+      val perfDump = ctrl.dump
       val counter = RegInit(0.U(64.W)).suggestName(perfName + "Counter")
       val next_counter = WireInit(0.U(64.W)).suggestName(perfName + "Next")
       next_counter := counter + perfCnt
       counter := Mux(perfClean, 0.U, next_counter)
 
-      when (perfDump) {
-        XSPerfPrint(p"$perfName, $next_counter\n")(helper.io)
-      }
+      XSPerfPrint(perfDump, p"$perfName, $next_counter\n")
     }
   }
 }
 
-object XSPerfHistogram extends HasRegularPerfName {
+object XSPerfHistogram extends HasRegularPerfName with TapData {
   // instead of simply accumulating counters
   // this function draws a histogram
+  private val perfHistInfos = ListBuffer.empty[(String, UInt, Bool, Int, Int, Int, Boolean, Boolean)]
   def apply
   (
     perfName: String,
@@ -78,9 +93,16 @@ object XSPerfHistogram extends HasRegularPerfName {
   (implicit p: Parameters): Unit = {
     judgeName(perfName)
     if (p(PerfCounterOptionsKey).enablePerfPrint) {
-      val helper = Module(new LogPerfHelper)
-      val perfClean = helper.io.clean
-      val perfDump = helper.io.dump
+      if(perfHistInfos.isEmpty) XSLog.registerCaller(LogPerfIO => collect(LogPerfIO))
+      perfHistInfos += ((perfName, perfCnt, enable, start, stop, step, left_strict, right_strict))
+    }
+  }
+  def collect(ctrl: LogPerfIO)(implicit p: Parameters): Unit = {
+    perfHistInfos.foreach{ case (perfName, perfCnt_bore, enable_bore, start, stop, step, left_strict, right_strict) =>
+      val perfCnt = tap(perfCnt_bore)
+      val enable = tap(enable_bore)
+      val perfClean = ctrl.clean
+      val perfDump = ctrl.dump
 
       val sum = RegInit(0.U(64.W)).suggestName(perfName + "Sum")
       val nSamples = RegInit(0.U(64.W)).suggestName(perfName + "NSamples")
@@ -102,13 +124,11 @@ object XSPerfHistogram extends HasRegularPerfName {
         }
       }
 
-      when (perfDump) {
-        XSPerfPrint(p"${perfName}_sum, ${sum}\n")(helper.io)
-        XSPerfPrint(p"${perfName}_mean, ${sum/nSamples}\n")(helper.io)
-        XSPerfPrint(p"${perfName}_sampled, ${nSamples}\n")(helper.io)
-        XSPerfPrint(p"${perfName}_underflow, ${underflow}\n")(helper.io)
-        XSPerfPrint(p"${perfName}_overflow, ${overflow}\n")(helper.io)
-      }
+      XSPerfPrint(perfDump, p"${perfName}_sum, ${sum}\n")
+      XSPerfPrint(perfDump, p"${perfName}_mean, ${sum/nSamples}\n")
+      XSPerfPrint(perfDump, p"${perfName}_sampled, ${nSamples}\n")
+      XSPerfPrint(perfDump, p"${perfName}_underflow, ${underflow}\n")
+      XSPerfPrint(perfDump, p"${perfName}_overflow, ${overflow}\n")
 
       // drop each perfCnt value into a bin
       val nBins = (stop - start) / step
@@ -141,29 +161,34 @@ object XSPerfHistogram extends HasRegularPerfName {
           counter := counter + 1.U
         }
 
-        when (perfDump) {
-          XSPerfPrint(p"${histName}, $counter\n")(helper.io)
-        }
+        XSPerfPrint(perfDump, p"${histName}, $counter\n")
       }
     }
   }
 }
 
-object XSPerfMax extends HasRegularPerfName {
+object XSPerfMax extends HasRegularPerfName with TapData {
+  private val perfMaxInfos = ListBuffer.empty[(String, UInt, Bool)]
   def apply(perfName: String, perfCnt: UInt, enable: Bool)(implicit p: Parameters): Unit = {
     judgeName(perfName)
     if (p(PerfCounterOptionsKey).enablePerfPrint) {
-      val helper = Module(new LogPerfHelper)
-      val perfClean = helper.io.clean
-      val perfDump = helper.io.dump
+      if(perfMaxInfos.isEmpty) XSLog.registerCaller(LogPerfIO => collect(LogPerfIO))
+      perfMaxInfos += ((perfName, perfCnt, enable))
+    }
+  }
+
+  def collect(ctrl: LogPerfIO)(implicit p: Parameters): Unit = {
+    perfMaxInfos.foreach{ case (perfName, perfCnt_bore, enable_bore) =>
+      val perfCnt = tap(perfCnt_bore)
+      val enable = tap(enable_bore)
+      val perfClean = ctrl.clean
+      val perfDump = ctrl.dump
 
       val max = RegInit(0.U(64.W))
       val next_max = Mux(enable && (perfCnt > max), perfCnt, max)
       max := Mux(perfClean, 0.U, next_max)
 
-      when (perfDump) {
-        XSPerfPrint(p"${perfName}_max, $next_max\n")(helper.io)
-      }
+      XSPerfPrint(perfDump, p"${perfName}_max, $next_max\n")
     }
   }
 }
@@ -306,5 +331,9 @@ object XSPerfRolling extends HasRegularPerfName {
 object XSPerfPrint {
   def apply(pable: Printable)(ctrlInfo: LogPerfIO)(implicit p: Parameters): Unit = {
     XSLog(XSLogLevel.PERF, ctrlInfo)(true, true.B, pable)
+  }
+
+  def apply(cond: Bool, pable: Printable)(implicit p: Parameters): Unit = {
+    XSLog(XSLogLevel.PERF)(true, cond, pable)
   }
 }
