@@ -229,6 +229,7 @@ object ChiselDB {
   def init(enable: Boolean): Unit = {
     // Not needed at the moment
     this.enable = enable
+    PerfCCT.init(enable)
   }
 
   def createTable[T <: Record](tableName: String, hw: T, basicDB: Boolean = false): Table[T] = {
@@ -329,6 +330,7 @@ object ChiselDB {
        |sqlite3 *mem_db;
        |char *zErrMsg;
        |int rc;
+       |extern void init_perfcct(char *((*select_db_list)[256]), int select_db_num);
        |
        |${table_map.keys.map(t => "bool enable_dump_" + t + " = true;\n").mkString("","\n","\n")}
        |
@@ -367,6 +369,7 @@ object ChiselDB {
        |    }
        |${table_map.keys.map(t => "    enable_dump_" + t + " = false;").mkString("\n")}
        |${table_map.keys.map(t => select_enable_assign(t)).mkString("\n")}
+       |    init_perfcct(&select_db_list, select_db_num);
        |  }
        |
        |${table_map.keys.map(t => "  init_db_" + t + "();").mkString("\n")}
@@ -379,6 +382,7 @@ object ChiselDB {
   def addToFileRegisters = {
     FileRegisters.add("chisel_db.h", getCHeader)
     FileRegisters.add("chisel_db.cpp", getCpp)
+    PerfCCT.addToFileRegisters
   }
 
 }
