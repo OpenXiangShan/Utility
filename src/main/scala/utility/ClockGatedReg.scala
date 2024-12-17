@@ -36,6 +36,33 @@ object GatedValidRegNext {
     next := RegEnable(last, VecInit(Seq.fill(last.size)(false.B)), last.asUInt =/= next.asUInt)
     next
   }
+
+  // Using `apply1bitGate` to add clock gate to 1-bit valid signal
+  // Perform clock gate on the 1-bit valid signal and use OR instead of XOR as
+  // the enable signal of RegEnable.
+
+  def apply(apply1bitGate: Boolean = false, next: Bool, init: Bool = false.B): Bool = {
+    if (apply1bitGate) {
+      val last = Wire(Bool())
+      last := RegEnable(next, init, next || last)
+      last
+    } else {
+      apply(next, init)
+    }
+  }
+
+  // Note: No init will cause X state.
+  def apply(apply1bitGate: Boolean = false, next: Bool): Bool = {
+    if (apply1bitGate) {
+      val last = Wire(Bool())
+      last := RegEnable(next, next || last)
+      last
+    } else {
+      val last = Wire(Bool())
+      last := RegNext(next)
+      last
+    }
+  }
 }
 
 object GatedValidRegNextN {
