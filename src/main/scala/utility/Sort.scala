@@ -48,7 +48,7 @@ object TwithPtr {
 }
 
 object HwSort {
-  /** Hardware Sort, a small combinational sorter that can sort up to 4 data by Ptr
+  /** Hardware Sort, a small combinational sorter that can sort up to 4 data by Ptr.
     * 
     * The sort is stable. That is, elements that are invalid or equal (as determined by `cmp` function),
     * appear in the same order in the sorted sequence as in the original.
@@ -56,7 +56,7 @@ object HwSort {
     * @tparam A default Data
     * @tparam B the type where "<" is defined, here it refers to [[CircularQueuePtr]]
     * @param  xVec the origin Vec data.
-    * @param  cmp the ordering assumed on domain `B`
+    * @param  cmp the ordering assumed on domain `B`, ascending sorting is default.
     * @return a Vec consisting of the elements of `xVec` sorted by `cmp`
     * 
     * @example {{{
@@ -64,13 +64,18 @@ object HwSort {
     *   val ascSorted = HwSort(VecInit(io.req.map { case x => TwithPtr(x.valid, x.bits, x.bits.uop.robIdx) }))
     *   
     *   // Descending sorting can be customized, i.e. the new one comes first.
-    *   val desSorted = HwSort(
-    *     VecInit(io.req.map { case x => TwithPtr(x.valid, x.bits, x.bits.uop.robIdx) }),
-    *     [B <: CircularQueuePtr[B]](a: B, b: B) => { a > b }
+    *   // method1: implicitly set
+    *   implicit val customCmp: (RobPtr, RobPtr) => Bool = (x, y) => x > y
+    *   val desSorted1 = HwSort(VecInit(io.req.map { case x => TwithPtr(x.valid, x.bits, x.bits.uop.robIdx) }))
+    *   // method2: explicitly provide
+    *   val desSorted2 = HwSort(VecInit(io.req.map { case x => TwithPtr(x.valid, x.bits, x.bits.uop.robIdx) }))(
+    *     (a, b) => a > b
     *   )
     * }}}
     */
-  def apply[A <: Data, B <: CircularQueuePtr[B]](xVec: Vec[TwithPtr[A, B]], cmp: (B, B) => Bool): Vec[TwithPtr[A, B]] = {
+  def apply[A <: Data, B <: CircularQueuePtr[B]](xVec: Vec[TwithPtr[A, B]])
+  (implicit cmp: (B, B) => Bool = (x: B, y: B) => x < y)
+  : Vec[TwithPtr[A, B]] = {
     var size = xVec.length
     val res = WireInit(xVec)
 
@@ -91,15 +96,15 @@ object HwSort {
       val row2 = Wire(xVec.cloneType)
       val row3 = Wire(xVec.cloneType)
 
-      val tmp0 = apply(VecInit(row0.slice(0, 2)), cmp)
+      val tmp0 = apply(VecInit(row0.slice(0, 2)))
       row1(0) := tmp0(0)
       row1(1) := tmp0(1)
       row1(2) := row0(2)
-      val tmp1 = apply(VecInit(row1.slice(1, 3)), cmp)
+      val tmp1 = apply(VecInit(row1.slice(1, 3)))
       row2(0) := row1(0)
       row2(1) := tmp1(0)
       row2(2) := tmp1(1)
-      val tmp2 = apply(VecInit(row2.slice(0, 2)), cmp)
+      val tmp2 = apply(VecInit(row2.slice(0, 2)))
       row3(0) := tmp2(0)
       row3(1) := tmp2(1)
       row3(2) := row2(2)
@@ -113,24 +118,24 @@ object HwSort {
       val row2 = Wire(xVec.cloneType)
       val row3 = Wire(xVec.cloneType)
 
-      val tmp1_1 = apply(VecInit(row0(0), row0(1)), cmp)
+      val tmp1_1 = apply(VecInit(row0(0), row0(1)))
       row1(0) := tmp1_1(0)
       row1(1) := tmp1_1(1)
-      val tmp1_2 = apply(VecInit(row0(2), row0(3)), cmp)
+      val tmp1_2 = apply(VecInit(row0(2), row0(3)))
       row1(2) := tmp1_2(0)
       row1(3) := tmp1_2(1)
       
-      val tmp2_1 = apply(VecInit(row1(1), row1(2)), cmp)
+      val tmp2_1 = apply(VecInit(row1(1), row1(2)))
       row2(1) := tmp2_1(0)
       row2(2) := tmp2_1(1)
-      val tmp2_2 = apply(VecInit(row1(0), row1(3)), cmp)
+      val tmp2_2 = apply(VecInit(row1(0), row1(3)))
       row2(0) := tmp2_2(0)
       row2(3) := tmp2_2(1)
 
-      val tmp3_1 = apply(VecInit(row2(0), row2(1)), cmp)
+      val tmp3_1 = apply(VecInit(row2(0), row2(1)))
       row3(1) := tmp3_1(0)
       row3(2) := tmp3_1(1)
-      val tmp3_2 = apply(VecInit(row2(2), row2(3)), cmp)
+      val tmp3_2 = apply(VecInit(row2(2), row2(3)))
       row3(0) := tmp3_2(0)
       row3(3) := tmp3_2(1)
 
@@ -141,11 +146,6 @@ object HwSort {
     }
 
     res
-  }
-
-  def apply[A <: Data, B <: CircularQueuePtr[B]](xVec: Vec[TwithPtr[A, B]]): Vec[TwithPtr[A, B]] = {
-    def cmp(x: B, y: B): Bool = { x < y }
-    apply(xVec, cmp)
   }
 
 }
