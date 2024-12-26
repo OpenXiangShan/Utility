@@ -24,14 +24,14 @@ package utility
 import chisel3._
 import chisel3.util._
 
-class DataWithPtr[A <: Data, B <: CircularQueuePtr[B]](a: A, b: B) extends Bundle {
+class DataWithPtr[A <: Data, B <: CircularQueuePtr[B]](bitsCT: A, ptrCT: B) extends Bundle {
   val valid = Bool()
-  val bits = a.cloneType
-  val ptr = b.cloneType
+  val bits = bitsCT // CT: its chiselType
+  val ptr = ptrCT
 }
 
 object DataWithPtr {
-  /** Factory of class [[DataWithPtr]]
+  /** Hardware Variable Factory of class [[DataWithPtr]]
     *
     * @param  valid Bool
     * @param  bits the origin Data
@@ -39,7 +39,7 @@ object DataWithPtr {
     * @return new hardware of [[DataWithPtr]]
     */
   def apply[A <: Data, B <: CircularQueuePtr[B]](valid: Bool, bits: A, ptr: B): DataWithPtr[A, B] = {
-    val x = Wire(new DataWithPtr[A, B](bits, ptr))
+    val x = Wire(new DataWithPtr(chiselTypeOf(bits), chiselTypeOf(ptr)))
     x.valid := valid
     x.bits := bits
     x.ptr := ptr
