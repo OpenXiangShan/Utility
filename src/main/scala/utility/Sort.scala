@@ -88,6 +88,9 @@ object HwSort {
       when(swap) {
         res(0) := xVec(1)
         res(1) := xVec(0)
+      }.otherwise {
+        res(0) := xVec(0)
+        res(1) := xVec(1)
       }
     } else if (size == 3) {
       // total ~40 ps
