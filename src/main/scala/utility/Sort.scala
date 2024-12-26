@@ -1,5 +1,5 @@
 /***************************************************************************************
-* Copyright (c) 2024 Beijing Institute of Open xVec Chip (BOSC)
+* Copyright (c) 2024 Beijing Institute of Open Source Chip (BOSC)
 * Copyright (c) 2024 Institute of Computing Technology, Chinese Academy of Sciences
 *
 * XiangShan is licensed under Mulan PSL v2.
@@ -12,7 +12,7 @@
 * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
 *
 * See the Mulan PSL v2 for more details.
-* 
+*
 * Acknowledgement
 * This implementation is inspired by several key materials:
 * [1] https://github.com/OpenXiangShan/XiangShan/blob/d4ca2db4b3d45add495358a040aa2b9f26e40370/src/main/scala/xiangshan/mem/prefetch/L1PrefetchComponent.scala#L103
@@ -24,22 +24,22 @@ package utility
 import chisel3._
 import chisel3.util._
 
-class TwithPtr[A <: Data, B <: CircularQueuePtr[B]](a: A, b: B) extends Bundle {
+class DataWithPtr[A <: Data, B <: CircularQueuePtr[B]](a: A, b: B) extends Bundle {
   val valid = Bool()
   val bits = a.cloneType
   val ptr = b.cloneType
 }
 
-object TwithPtr {
-  /** Factory of class [[TwithPtr]]
+object DataWithPtr {
+  /** Factory of class [[DataWithPtr]]
     *
     * @param  valid Bool
     * @param  bits the origin Data
     * @param  ptr [[CircularQueuePtr]]
-    * @return new hardware of [[TwithPtr]]
+    * @return new hardware of [[DataWithPtr]]
     */
-  def apply[A <: Data, B <: CircularQueuePtr[B]](valid: Bool, bits: A, ptr: B): TwithPtr[A, B] = {
-    val x = Wire(new TwithPtr[A, B](bits, ptr))
+  def apply[A <: Data, B <: CircularQueuePtr[B]](valid: Bool, bits: A, ptr: B): DataWithPtr[A, B] = {
+    val x = Wire(new DataWithPtr[A, B](bits, ptr))
     x.valid := valid
     x.bits := bits
     x.ptr := ptr
@@ -61,21 +61,21 @@ object HwSort {
     * 
     * @example {{{
     *   // Ascending sorting is default, i.e. the oldest comes first.
-    *   val ascSorted = HwSort(VecInit(io.req.map { case x => TwithPtr(x.valid, x.bits, x.bits.uop.robIdx) }))
+    *   val ascSorted = HwSort(VecInit(io.req.map { case x => DataWithPtr(x.valid, x.bits, x.bits.uop.robIdx) }))
     *   
     *   // Descending sorting can be customized, i.e. the new one comes first.
     *   // method1: implicitly set
     *   implicit val customCmp: (RobPtr, RobPtr) => Bool = (x, y) => x > y
-    *   val desSorted1 = HwSort(VecInit(io.req.map { case x => TwithPtr(x.valid, x.bits, x.bits.uop.robIdx) }))
+    *   val desSorted1 = HwSort(VecInit(io.req.map { case x => DataWithPtr(x.valid, x.bits, x.bits.uop.robIdx) }))
     *   // method2: explicitly provide
-    *   val desSorted2 = HwSort(VecInit(io.req.map { case x => TwithPtr(x.valid, x.bits, x.bits.uop.robIdx) }))(
+    *   val desSorted2 = HwSort(VecInit(io.req.map { case x => DataWithPtr(x.valid, x.bits, x.bits.uop.robIdx) }))(
     *     (a, b) => a > b
     *   )
     * }}}
     */
-  def apply[A <: Data, B <: CircularQueuePtr[B]](xVec: Vec[TwithPtr[A, B]])
+  def apply[A <: Data, B <: CircularQueuePtr[B]](xVec: Vec[DataWithPtr[A, B]])
   (implicit cmp: (B, B) => Bool = (x: B, y: B) => x < y)
-  : Vec[TwithPtr[A, B]] = {
+  : Vec[DataWithPtr[A, B]] = {
     var size = xVec.length
     val res = WireInit(xVec)
 
@@ -92,9 +92,9 @@ object HwSort {
     } else if (size == 3) {
       // total ~40 ps
       val row0 = WireInit(xVec)
-      val row1 = Wire(xVec.cloneType)
-      val row2 = Wire(xVec.cloneType)
-      val row3 = Wire(xVec.cloneType)
+      val row1 = Wire(chiselTypeOf(xVec))
+      val row2 = Wire(chiselTypeOf(xVec))
+      val row3 = Wire(chiselTypeOf(xVec))
 
       val tmp0 = apply(VecInit(row0.slice(0, 2)))
       row1(0) := tmp0(0)
@@ -114,9 +114,9 @@ object HwSort {
     } else if (size == 4){
       // total ~40 ps
       val row0 = WireInit(xVec)
-      val row1 = Wire(xVec.cloneType)
-      val row2 = Wire(xVec.cloneType)
-      val row3 = Wire(xVec.cloneType)
+      val row1 = Wire(chiselTypeOf(xVec))
+      val row2 = Wire(chiselTypeOf(xVec))
+      val row3 = Wire(chiselTypeOf(xVec))
 
       val tmp1_1 = apply(VecInit(row0(0), row0(1)))
       row1(0) := tmp1_1(0)
