@@ -140,11 +140,13 @@ class SRAMTemplate[T <: Data](
   shouldReset: Boolean = false, extraReset: Boolean = false,
   holdRead: Boolean = false, bypassWrite: Boolean = false,
   useBitmask: Boolean = false, withClockGate: Boolean = false,
+  separateGateClock: Boolean = false,
 ) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
     val w = Flipped(new SRAMWriteBus(gen, set, way, useBitmask))
   })
+  assert((singlePort && !separateGateClock) || (!singlePort));
   val extra_reset = if (extraReset) Some(IO(Input(Bool()))) else None
 
   val wordType = UInt(gen.getWidth.W)
@@ -174,7 +176,7 @@ class SRAMTemplate[T <: Data](
   val maskedRClock = Wire(Clock())
   val maskedWClock = Wire(Clock())
 
-  if (singlePort) { 
+  if (singlePort || (!singlePort && !separateGateClock)) { 
     // To ensure the generation of single-port SRAM, the RCLK and WCLK must be the same.
     val maskedClock = ClockGate(false.B, ren || wen, clock)
     maskedRClock := maskedClock
@@ -254,7 +256,7 @@ class FoldedSRAMTemplate[T <: Data](
   shouldReset: Boolean = false, extraReset: Boolean = false,
   holdRead: Boolean = false, singlePort: Boolean = false,
   bypassWrite: Boolean = false, useBitmask: Boolean = false,
-  withClockGate: Boolean = false, avoidSameAddr: Boolean = false,
+  withClockGate: Boolean = false, separateGateClock: Boolean = false,
 ) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
@@ -273,7 +275,7 @@ class FoldedSRAMTemplate[T <: Data](
   val array = Module(new SRAMTemplate(gen, set=nRows, way=width*way,
     shouldReset=shouldReset, extraReset=extraReset, holdRead=holdRead,
     singlePort=singlePort, bypassWrite=bypassWrite, useBitmask=useBitmask,
-    withClockGate=withClockGate))
+    withClockGate=withClockGate, separateGateClock=separateGateClock))
   if (array.extra_reset.isDefined) {
     array.extra_reset.get := extra_reset.get
   }
