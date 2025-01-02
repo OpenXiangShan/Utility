@@ -1,19 +1,3 @@
-/***************************************************************************************
-* Copyright (c) 2020-2021 Institute of Computing Technology, Chinese Academy of Sciences
-* Copyright (c) 2020-2021 Peng Cheng Laboratory
-*
-* XiangShan is licensed under Mulan PSL v2.
-* You can use this software according to the terms and conditions of the Mulan PSL v2.
-* You may obtain a copy of Mulan PSL v2 at:
-*          http://license.coscl.org.cn/MulanPSL2
-*
-* THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
-* EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
-* MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
-*
-* See the Mulan PSL v2 for more details.
-***************************************************************************************/
-
 /**************************************************************************************
 * Copyright (c) 2020 Institute of Computing Technology, CAS
 * Copyright (c) 2020 University of Chinese Academy of Sciences
@@ -30,10 +14,12 @@
 * See the Mulan PSL v2 for more details.
 ***************************************************************************************/
 
-package utility
+package utility.sram
 
 import chisel3._
 import chisel3.util._
+import utility.mbist.MbistClockGateCell
+import utility.{ClockGate, GatedValidRegNext, HoldUnless, LFSR64}
 
 class SRAMBundleA(val set: Int) extends Bundle {
   val setIdx = Output(UInt(log2Up(set).W))
@@ -140,20 +126,60 @@ class SRAMTemplate[T <: Data](
   shouldReset: Boolean = false, extraReset: Boolean = false,
   holdRead: Boolean = false, bypassWrite: Boolean = false,
   useBitmask: Boolean = false, withClockGate: Boolean = false,
-  separateGateClock: Boolean = false,
+  separateGateClock: Boolean = false, // no effect, only supports independent RW cg, only for API compatibility
+  hasMbist: Boolean = false, latency: Int = 1, extraHold:Boolean = false,
+  extClockGate: Boolean = false
 ) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
     val w = Flipped(new SRAMWriteBus(gen, set, way, useBitmask))
+    val broadcast = if(hasMbist) Some(new SramBroadcastBundle) else None
+    val mbistCgCtl = if(hasMbist && extClockGate) {
+      Some(new Bundle {
+        val en = Output(Bool())
+        val rckEn = Output(Bool())
+        val wckEn = Output(Bool())
+        val rclk = Input(Clock())
+        val wclk = Input(Clock())
+      })
+    } else {
+      None
+    }
   })
-  assert((singlePort && !separateGateClock) || (!singlePort));
+  require(latency >= 1)
   val extra_reset = if (extraReset) Some(IO(Input(Bool()))) else None
 
   val wordType = UInt(gen.getWidth.W)
   val arrayWidth = if (useBitmask) 1 else gen.getWidth
   val arrayType = UInt(arrayWidth.W)
   val arrayPortSize = if (useBitmask) way * gen.getWidth else way
-  val array = SyncReadMem(set, Vec(arrayPortSize, arrayType))
+  val sp = SramInfo(arrayWidth, arrayPortSize, hasMbist)
+
+  private val implCg = !extClockGate && (extraHold || withClockGate)
+  private val rcg = if(implCg) Some(Module(new MbistClockGateCell(extraHold))) else None
+  private val wcg = if(!singlePort && implCg) Some(Module(new MbistClockGateCell(extraHold))) else None
+  private val nodeNum = sp.mbistNodeNum
+  private val rclk = io.mbistCgCtl.map(_.rclk).getOrElse(rcg.map(_.out_clock).getOrElse(clock))
+  private val wclk = io.mbistCgCtl.map(_.wclk).getOrElse(wcg.map(_.out_clock).getOrElse(clock))
+  private val (mbistBd, array, vname) = SramHelper.genRam(
+    sp = sp,
+    set = set,
+    dp = !singlePort,
+    setup = 1,
+    hold = if(extraHold) 1 else 0,
+    latency = latency,
+    bist = hasMbist,
+    broadcast = io.broadcast,
+    rclk,
+    Some(wclk),
+    suffix = "",
+    foundry = "Unknown",
+    sramInst = "STANDARD",
+    template = this
+  )
+  val sramName: String = vname
+  private val brcBd = io.broadcast.getOrElse(0.U.asTypeOf(new SramBroadcastBundle))
+
   val (resetState, resetSet) = (WireInit(false.B), WireInit(0.U))
 
   if (shouldReset) {
@@ -170,54 +196,87 @@ class SRAMTemplate[T <: Data](
     resetSet := _resetSet
   }
 
-  val (ren, wen) = (io.r.req.valid, io.w.req.valid || resetState)
-  val realRen = (if (singlePort) ren && !wen else ren)
+  private val (ren, wen) = (io.r.req.fire, io.w.req.valid || resetState)
 
-  val maskedRClock = Wire(Clock())
-  val maskedWClock = Wire(Clock())
-
-  if (singlePort || (!singlePort && !separateGateClock)) { 
-    // To ensure the generation of single-port SRAM, the RCLK and WCLK must be the same.
-    val maskedClock = ClockGate(false.B, ren || wen, clock)
-    maskedRClock := maskedClock
-    maskedWClock := maskedClock
+  private val _wmask = if (useBitmask) {
+    io.w.req.bits.flattened_bitmask.getOrElse("b1".U)
   } else {
-    maskedRClock := ClockGate(false.B, ren, clock)
-    maskedWClock := ClockGate(false.B, wen, clock)
+    io.w.req.bits.waymask.getOrElse("b1".U)
+  }
+  private val wmask = Mux(resetState, Fill(arrayPortSize, true.B), _wmask)
+  private val wdata = Mux(resetState, 0.U, io.w.req.bits.data.asUInt)
+  private val waddr = Mux(resetState, resetSet, io.w.req.bits.setIdx)
+  private val raddr = io.r.req.bits.setIdx
+
+  private val mbistWmask = sp.mbistMaskConverse(mbistBd.wmask, mbistBd.selectedOH)
+  private val funcWmask = sp.funcMaskConverse(wmask)
+
+  private val mbistWdata = Fill(nodeNum, mbistBd.wdata)
+  private val ramWmask = if(hasMbist) Mux(mbistBd.ack, mbistWmask, funcWmask) else funcWmask
+  private val ramWdata = if(hasMbist) Mux(mbistBd.ack, mbistWdata, wdata) else wdata
+  private val ramWen = if(hasMbist) Mux(mbistBd.ack, mbistBd.we, wen) else wen
+  private val ramRen = if(hasMbist) Mux(mbistBd.ack, mbistBd.re, ren) else ren
+  private val ramRaddr = if(hasMbist) Mux(mbistBd.ack, mbistBd.addr_rd, raddr) else raddr
+  private val ramWaddr = if(hasMbist & singlePort) {
+    Mux(mbistBd.ack, mbistBd.addr_rd, waddr)
+  } else if(hasMbist & !singlePort) {
+    Mux(mbistBd.ack, mbistBd.addr, waddr)
+  } else {
+    waddr
   }
 
-  val setIdx = Mux(resetState, resetSet, io.w.req.bits.setIdx)
-  val wdata = Mux(resetState, 0.U.asTypeOf(Vec(way, gen)), io.w.req.bits.data).
-    asTypeOf(Vec(arrayPortSize, arrayType))
+  private val rckEn = Wire(Bool())
+  private val wckEn = Wire(Bool())
+  io.mbistCgCtl.foreach(c => {
+    c.en := mbistBd.ack
+    c.rckEn := rckEn
+    c.wckEn := wckEn
+  })
+  if(extraHold) {
+    val rckEnReg = RegNext(rckEn, false.B)
+    val wckEnReg = RegNext(wckEn, false.B)
+    rckEn := Cat(ramRen, rckEnReg) === "b10".U
+    wckEn := Cat(ramWen, wckEnReg) === "b10".U
+  } else {
+    rckEn := ramRen
+    wckEn := ramWen
+  }
 
-  // Memeory write
-  if (!useBitmask) {
-    val waymask = Mux(resetState, Fill(way, "b1".U), io.w.req.bits.waymask.getOrElse("b1".U))
-    when(wen) {
-      if (withClockGate) {
-        array.write(setIdx, wdata, waymask.asBools, maskedWClock)
-      } else {
-        array.write(setIdx, wdata, waymask.asBools)
-      }
+  private val ramRdata = SramProto.read(array, singlePort, ramRaddr, ramRen)
+  when(ramWen && !brcBd.ram_hold) {
+    SramProto.write(array, singlePort, ramWaddr, ramWdata, ramWmask)
+  }
+
+  private val respReg = RegInit(0.U(latency.W))
+  when(rckEn) {
+    respReg := (1 << (latency - 1)).U
+  }.otherwise {
+    respReg := Cat(false.B, respReg) >> 1.U
+  }
+
+  rcg.foreach(cg => {
+    cg.dft.fromBroadcast(brcBd)
+    cg.mbist.req := mbistBd.ack
+    cg.mbist.readen := rckEn
+    if(singlePort) {
+      cg.mbist.writeen := wckEn
+      cg.E := rckEn | wckEn
+    } else {
+      cg.mbist.writeen := false.B
+      cg.E := rckEn
     }
-  } else {
-    val bitmask = Mux(resetState, Fill(way * gen.getWidth, "b1".U), io.w.req.bits.flattened_bitmask.getOrElse("b1".U))
-    when(wen) {
-      if (withClockGate) {
-        array.write(setIdx, wdata, bitmask.asBools, maskedWClock)
-      } else {
-        array.write(setIdx, wdata, bitmask.asBools)
-      }
-    }
-  }
+  })
 
-  // Memory read
-  val raw_rdata = if (withClockGate) {
-    array.read(io.r.req.bits.setIdx, realRen, maskedRClock).asTypeOf(Vec(way, wordType))
-  } else {
-    array.read(io.r.req.bits.setIdx, realRen).asTypeOf(Vec(way, wordType))
-  }
-  require(wdata.getWidth == raw_rdata.getWidth)
+  wcg.foreach(cg => {
+    cg.dft.fromBroadcast(brcBd)
+    cg.mbist.req := mbistBd.ack
+    cg.mbist.readen := false.B
+    cg.mbist.writeen := wckEn
+    cg.E := wckEn
+  })
+
+  private val raw_rdata = ramRdata.asTypeOf(Vec(way, wordType))
+  require(wdata.getWidth == ramRdata.getWidth)
 
   // bypass for dual-port SRAMs
   require(!bypassWrite || bypassWrite && !singlePort)
@@ -242,13 +301,18 @@ class SRAMTemplate[T <: Data](
   }
 
   // hold read data for SRAMs
-  val rdata = (if (holdRead) HoldUnless(mem_rdata, GatedValidRegNext(realRen))
+  val rdata = (if (holdRead) HoldUnless(mem_rdata, GatedValidRegNext(ren))
               else mem_rdata).map(_.asTypeOf(gen))
 
+  private val rdataReg = RegEnable(ramRdata, respReg(0))
+  private val selectOHReg = RegEnable(mbistBd.selectedOH, respReg(0))
+  mbistBd.rdata := Mux1H(selectOHReg, rdataReg.asTypeOf(Vec(nodeNum, UInt((ramRdata.getWidth / nodeNum).W))))
   io.r.resp.data := VecInit(rdata)
-  io.r.req.ready := !resetState && (if (singlePort) !wen else true.B)
-  io.w.req.ready := true.B
 
+  private val singleHold = if(singlePort) io.w.req.valid else false.B
+  private val resetHold = if(shouldReset) resetState else false.B
+  io.r.req.ready := !resetHold && !singleHold
+  io.w.req.ready := !resetHold
 }
 
 class FoldedSRAMTemplate[T <: Data](
@@ -257,7 +321,8 @@ class FoldedSRAMTemplate[T <: Data](
   holdRead: Boolean = false, singlePort: Boolean = false,
   bypassWrite: Boolean = false, useBitmask: Boolean = false,
   withClockGate: Boolean = false, avoidSameAddr: Boolean = false,
-  separateGateClock: Boolean = false,
+  separateGateClock: Boolean = false, // no effect, only supports independent RW cg, only for API compatibility
+  hasMbist: Boolean = false, latency: Int = 1
 ) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
@@ -276,7 +341,8 @@ class FoldedSRAMTemplate[T <: Data](
   val array = Module(new SRAMTemplate(gen, set=nRows, way=width*way,
     shouldReset=shouldReset, extraReset=extraReset, holdRead=holdRead,
     singlePort=singlePort, bypassWrite=bypassWrite, useBitmask=useBitmask,
-    withClockGate=withClockGate, separateGateClock=separateGateClock))
+    withClockGate=withClockGate, separateGateClock=separateGateClock,
+    hasMbist=hasMbist, latency=latency, extraHold = false))
   if (array.extra_reset.isDefined) {
     array.extra_reset.get := extra_reset.get
   }
@@ -364,13 +430,14 @@ class FoldedSRAMTemplate[T <: Data](
   }
 }
 class SRAMTemplateWithArbiter[T <: Data](nRead: Int, gen: T, set: Int, way: Int = 1,
-  shouldReset: Boolean = false) extends Module {
+  shouldReset: Boolean = false, hasMbist:Boolean = false, latency:Int = 1) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(Vec(nRead, new SRAMReadBus(gen, set, way)))
     val w = Flipped(new SRAMWriteBus(gen, set, way))
   })
 
-  val ram = Module(new SRAMTemplate(gen, set, way, shouldReset = shouldReset, holdRead = false, singlePort = true))
+  val ram = Module(new SRAMTemplate(gen, set, way, shouldReset = shouldReset, holdRead = false, singlePort = true,
+    hasMbist = hasMbist, latency = latency))
   ram.io.w <> io.w
 
   val readArb = Module(new Arbiter(chiselTypeOf(io.r(0).req.bits), nRead))
