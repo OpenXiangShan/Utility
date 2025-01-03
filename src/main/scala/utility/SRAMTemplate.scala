@@ -256,7 +256,8 @@ class FoldedSRAMTemplate[T <: Data](
   shouldReset: Boolean = false, extraReset: Boolean = false,
   holdRead: Boolean = false, singlePort: Boolean = false,
   bypassWrite: Boolean = false, useBitmask: Boolean = false,
-  withClockGate: Boolean = false, separateGateClock: Boolean = false,
+  withClockGate: Boolean = false, avoidSameAddr: Boolean = false,
+  separateGateClock: Boolean = false,
 ) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
