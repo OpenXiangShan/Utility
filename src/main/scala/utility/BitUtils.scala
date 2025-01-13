@@ -187,7 +187,7 @@ object GetEvenBits {
   }
   def reverse(input: UInt): UInt = {
     VecInit((0 until input.getWidth * 2).map(i => {
-      if(i % 2 == 0) input(i/2) else false.B 
+      if(i % 2 == 0) input(i/2) else false.B
     })).asUInt
   }
 }
@@ -199,7 +199,7 @@ object GetOddBits {
   }
   def reverse(input: UInt): UInt = {
     VecInit((0 until input.getWidth * 2).map(i => {
-      if(i % 2 == 0) false.B else input(i/2) 
+      if(i % 2 == 0) false.B else input(i/2)
     })).asUInt
   }
 }
@@ -355,7 +355,7 @@ object SelectOne {
 object SelectFirstN {
   def apply(in: UInt, n: Int, valid: UInt) = {
     val sels = Wire(Vec(n, UInt(in.getWidth.W)))
-    var mask = in 
+    var mask = in
 
     for (i <- 0 until n) {
       sels(i) := PriorityEncoderOH(mask) & Fill(in.getWidth, valid(i))
@@ -364,4 +364,27 @@ object SelectFirstN {
 
     sels
   }
+}
+
+object FastAdderComparator {
+
+  def genFac(a: UInt, b: UInt, c0: Bool, k: UInt): UInt = {
+    require(a.getWidth == b.getWidth, "a and b must have the same width!")
+    require(a.getWidth == k.getWidth, "a and k must have the same width!")
+    val p = a ^ b
+    val g = a & b
+    val v = p & ~k | g
+
+    Reverse(VecInit((0 until a.getWidth).map {
+      case i =>
+        ~(p(i) ^ k(i) ^ (if (i == 0) c0 else v(i-1)))
+    }).asUInt)
+  }
+
+  def apply(a: UInt, b: UInt, c0: Bool, k: UInt): Bool = {
+    genFac(a, b, c0, k).andR
+  }
+
+  def apply(a: UInt, b: UInt, k: UInt): Bool = apply(a, b, false.B, k)
+
 }
