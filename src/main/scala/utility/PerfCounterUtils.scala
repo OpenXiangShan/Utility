@@ -24,14 +24,24 @@ import chisel3.experimental.BaseModule
 import org.chipsalliance.cde.config.{Field, Parameters}
 
 import scala.collection.mutable.ListBuffer
+import XSPerfLevel.XSPerfLevel
 
 case object PerfCounterOptionsKey extends Field[PerfCounterOptions]
 case class PerfCounterOptions
 (
   enablePerfPrint: Boolean,
   enablePerfDB: Boolean,
+  perfLevel: XSPerfLevel,
   perfDBHartID: Int
 )
+
+object XSPerfLevel extends Enumeration {
+  type XSPerfLevel = Value
+
+  val VERBOSE  = Value(0, "VERBOSE")
+  val NORMAL   = Value("NORMAL")
+  val CRITICAL = Value("CRITICAL")
+}
 
 trait HasRegularPerfName {
   def judgeName(perfName: String): Unit = {
@@ -54,9 +64,10 @@ trait XSPerfTap {
 
 object XSPerfAccumulate extends HasRegularPerfName with XSPerfTap {
   private val perfInfos = ListBuffer.empty[(Option[BaseModule], String, UInt)]
-  def apply(perfName: String, perfCnt: UInt)(implicit p: Parameters): Unit = {
+  def apply(perfName: String, perfCnt: UInt, perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE)
+           (implicit p: Parameters): Unit = {
     judgeName(perfName)
-    if (p(PerfCounterOptionsKey).enablePerfPrint) {
+    if (p(PerfCounterOptionsKey).enablePerfPrint && perfLevel >= p(PerfCounterOptionsKey).perfLevel) {
       if(perfInfos.isEmpty) XSLog.registerCaller(collect)
       perfInfos += ((chisel3.XSCompatibility.currentModule, perfName, perfCnt))
     }
@@ -89,11 +100,12 @@ object XSPerfHistogram extends HasRegularPerfName with XSPerfTap {
     stop: Int,
     step: Int = 1,
     left_strict: Boolean = false,
-    right_strict: Boolean = false
+    right_strict: Boolean = false,
+    perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE
   )
   (implicit p: Parameters): Unit = {
     judgeName(perfName)
-    if (p(PerfCounterOptionsKey).enablePerfPrint) {
+    if (p(PerfCounterOptionsKey).enablePerfPrint && perfLevel >= p(PerfCounterOptionsKey).perfLevel) {
       if(perfHistInfos.isEmpty) XSLog.registerCaller(collect)
       perfHistInfos += ((chisel3.XSCompatibility.currentModule, perfName, perfCnt, enable, start, stop, step, left_strict, right_strict))
     }
@@ -170,9 +182,10 @@ object XSPerfHistogram extends HasRegularPerfName with XSPerfTap {
 
 object XSPerfMax extends HasRegularPerfName with XSPerfTap {
   private val perfMaxInfos = ListBuffer.empty[(Option[BaseModule], String, UInt, Bool)]
-  def apply(perfName: String, perfCnt: UInt, enable: Bool)(implicit p: Parameters): Unit = {
+  def apply(perfName: String, perfCnt: UInt, enable: Bool, perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE)
+           (implicit p: Parameters): Unit = {
     judgeName(perfName)
-    if (p(PerfCounterOptionsKey).enablePerfPrint) {
+    if (p(PerfCounterOptionsKey).enablePerfPrint && perfLevel >= p(PerfCounterOptionsKey).perfLevel) {
       if(perfMaxInfos.isEmpty) XSLog.registerCaller(collect)
       perfMaxInfos += ((chisel3.XSCompatibility.currentModule, perfName, perfCnt, enable))
     }
@@ -195,14 +208,15 @@ object XSPerfMax extends HasRegularPerfName with XSPerfTap {
 }
 
 object QueuePerf {
-  def apply(size: Int, utilization: UInt, full: UInt)(implicit p: Parameters): Unit = {
-    XSPerfAccumulate("utilization", utilization)
-    XSPerfHistogram("util", utilization, true.B, 0, size, 1)
-    XSPerfAccumulate("full", full)
+  def apply(size: Int, utilization: UInt, full: UInt, perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE)
+           (implicit p: Parameters): Unit = {
+    XSPerfAccumulate("utilization", utilization, perfLevel)
+    XSPerfHistogram("util", utilization, true.B, 0, size, 1, perfLevel = perfLevel)
+    XSPerfAccumulate("full", full, perfLevel)
     val exHalf = utilization > (size/2).U
     val empty = utilization === 0.U
-    XSPerfAccumulate("exHalf", exHalf)
-    XSPerfAccumulate("empty", empty)
+    XSPerfAccumulate("exHalf", exHalf,perfLevel)
+    XSPerfAccumulate("empty", empty, perfLevel)
   }
 }
 
