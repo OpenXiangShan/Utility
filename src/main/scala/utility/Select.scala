@@ -21,7 +21,7 @@ import chisel3.util._
 
 object SelectByFn {
 
-  class SelectByFn[T <: Data, SelectT <: Data](gen: T, selectGen: SelectT, numIn: Int, fn: (SelectT, SelectT) => Bool, groupSize: Int, latch: Boolean) extends Module {
+  class SelectByFn[T <: Data, SelectT <: Data](gen: T, selectGen: SelectT, numIn: Int, fn: (SelectT, SelectT) => Bool) extends Module {
     val io = IO(new Bundle() {
       val in = Flipped(Vec(numIn, ValidIO(gen.cloneType)))
       val sel = Input(Vec(numIn, selectGen.cloneType))
@@ -29,7 +29,7 @@ object SelectByFn {
     })
     require(groupSize >= 2, "groupSize should be at least 2")
 
-    private def treeSelect(ins: Seq[(Bool, (T, SelectT))]): Seq[(Bool, (T, SelectT))] = {
+    def treeSelect(ins: Seq[(Bool, (T, SelectT))]): Seq[(Bool, (T, SelectT))] = {
       ins.length match {
         case 0 | 1 => ins
         case 2     =>
@@ -45,35 +45,7 @@ object SelectByFn {
       }
     }
 
-    private def groupSelect(ins: Seq[(Bool, (T, SelectT))]): Seq[(Bool, (T, SelectT))] = {
-      val groups = ins.grouped(groupSize).toSeq
-
-      require(groups.length > 0, "groups should not be empty")
-      val oldests = groups.map {
-        case elems =>
-          val (valid, (bits, select)) = treeSelect(elems).head
-          val oldest = Wire(Valid(gen.cloneType))
-          val oldestSel = Wire(selectGen.cloneType)
-
-          oldest.valid := valid
-          oldest.bits := bits
-          oldestSel := select
-
-          if (latch) {
-            oldest.valid := GatedValidRegNext(valid)
-            oldest.bits := RegEnable(bits, valid)
-            oldestSel := RegEnable(select, valid)
-          }
-          (oldest.valid, (oldest.bits, oldestSel))
-      }
-      if (groups.length == 1) {
-        oldests
-      } else {
-        groupSelect(oldests)
-      }
-    }
-
-    val oldest = groupSelect(io.in.zip(io.sel).map {
+    val oldest = treeSelect(io.in.zip(io.sel).map {
       case (elem, sel) => (elem.valid, (elem.bits, sel))
     })
     io.oldest.valid := oldest.head._1
@@ -90,15 +62,13 @@ object SelectByFn {
    */
 
   def apply[T <: Data, SelectT <: Data](
-    ins: Seq[ValidIO[T]],
+    ins:  Seq[ValidIO[T]],
     sels: Seq[SelectT],
     fn:   (SelectT, SelectT) => Bool,
-    groupSize: Int = 2,
-    latch: Boolean = false,
     moduleName: Option[String] = None
   ): ValidIO[T] = {
     require(ins.length == sels.length, "The number of elements and selectors should be the same!")
-    val mod = Module(new SelectByFn(ins.head.bits, sels.head, ins.length, fn, groupSize, latch)).suggestName(moduleName.getOrElse("SelectByFn"))
+    val mod = Module(new SelectByFn(ins.head.bits, sels.head, ins.length, fn)).suggestName(moduleName.getOrElse("SelectByFn"))
     mod.io.in <> ins
     mod.io.sel <> sels
     mod.io.oldest
