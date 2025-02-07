@@ -27,8 +27,6 @@ object SelectByFn {
       val sel = Input(Vec(numIn, selectGen.cloneType))
       val oldest = ValidIO(gen.cloneType)
     })
-    require(groupSize >= 2, "groupSize should be at least 2")
-
     def treeSelect(ins: Seq[(Bool, (T, SelectT))]): Seq[(Bool, (T, SelectT))] = {
       ins.length match {
         case 0 | 1 => ins
