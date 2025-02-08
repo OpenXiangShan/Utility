@@ -18,6 +18,7 @@ package utility.sram
 
 import chisel3._
 import chisel3.util._
+import sourcecode.FullName
 import utility.mbist.MbistClockGateCell
 import utility.{ClockGate, GatedValidRegNext, HoldUnless, LFSR64}
 
@@ -148,8 +149,8 @@ class SRAMTemplate[T <: Data](
   useBitmask: Boolean = false, withClockGate: Boolean = false,
   separateGateClock: Boolean = false,
   hasMbist: Boolean = false, latency: Int = 1, extraHold:Boolean = false,
-  extClockGate: Boolean = false
-) extends Module {
+  extClockGate: Boolean = false, suffix: Option[String] = None
+)(implicit valName: sourcecode.FullName) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
     val w = Flipped(new SRAMWriteBus(gen, set, way, useBitmask))
@@ -192,7 +193,7 @@ class SRAMTemplate[T <: Data](
     broadcast = io.broadcast,
     rclk,
     Some(wclk),
-    suffix = "",
+    suffix = suffix.getOrElse(SramHelper.getSramSuffix(valName.value)),
     foundry = "Unknown",
     sramInst = "STANDARD",
     template = this
@@ -342,8 +343,8 @@ class FoldedSRAMTemplate[T <: Data](
   bypassWrite: Boolean = false, useBitmask: Boolean = false,
   withClockGate: Boolean = false, avoidSameAddr: Boolean = false,
   separateGateClock: Boolean = false, // no effect, only supports independent RW cg, only for API compatibility
-  hasMbist: Boolean = false, latency: Int = 1
-) extends Module {
+  hasMbist: Boolean = false, latency: Int = 1, suffix: Option[String] = None
+)(implicit valName: sourcecode.FullName) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
     val w = Flipped(new SRAMWriteBus(gen, set, way, useBitmask))
@@ -362,7 +363,8 @@ class FoldedSRAMTemplate[T <: Data](
     shouldReset=shouldReset, extraReset=extraReset, holdRead=holdRead,
     singlePort=singlePort, bypassWrite=bypassWrite, useBitmask=useBitmask,
     withClockGate=withClockGate, separateGateClock=separateGateClock,
-    hasMbist=hasMbist, latency=latency, extraHold = false))
+    hasMbist=hasMbist, latency=latency, extraHold = false,
+    suffix = Some(suffix.getOrElse(SramHelper.getSramSuffix(valName.value)))))
   if (array.extra_reset.isDefined) {
     array.extra_reset.get := extra_reset.get
   }
