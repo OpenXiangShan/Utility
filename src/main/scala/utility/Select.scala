@@ -18,6 +18,7 @@ package utility
 
 import chisel3._
 import chisel3.util._
+import freechips.rocketchip.util._
 
 object SelectByFn {
 
@@ -51,12 +52,12 @@ object SelectByFn {
   }
 
   /**
-   * `SelectByFn` is a module designed to select the "oldest" element from an
+   * `SelectByFn` is a module designed to select the element from an
    * input sequence.
    *
    * @param ins The input elements.
    * @param sels The selector of the selection criterions.
-   * @param fn A comparison function to determine the "oldest" element based on the selection criterion.
+   * @param fn A comparison function to determine the element based on the selection criterion.
    */
 
   def apply[T <: Data, SelectT <: Data](
