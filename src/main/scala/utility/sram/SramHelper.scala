@@ -176,4 +176,60 @@ object SramHelper {
     }
     (mbist, array, vname)
   }
+
+  private val shortMap = Seq(
+    //l2 cache abbreviations
+    "coupledL2" -> "l2",
+    "DataStorage" -> "dat",
+    "tagArray" -> "tag",
+    "metaArray" -> "meta",
+    "replacer_sram_opt" -> "repl",
+    "origin_bit_opt" -> "orgb",
+    "rrTable" -> "rrt",
+    "tpMetaTable" -> "tp_meta",
+
+    //icache abbreviations
+    "icache" -> "icsh",
+    "SRAMTemplateWithFixedWidth" -> "dat",
+
+    //bp abbreviations
+    "TageTable" -> "bp_tage",
+    "TageBTable" -> "bp_tage",
+    "SCTable" -> "bp_sc",
+    "ITTageTable" -> "bp_ittage",
+    "FTB" -> "bp_ftb",
+    "us" -> "us",
+    "bt" -> "bt",
+
+    //ftq abbreviations
+    "FtqNRSRAM" -> "ftq",
+
+    //dcache abbreviations
+    "DataSRAMBank" -> "dcsh_dat",
+    "TagArray" -> "dcsh_tag",
+
+    //mmu abbreviations
+    "PtwCache" -> "ptw",
+    "l0" -> "l0",
+    "l1" -> "l1",
+
+    //prefetch abbreviations
+    "prefetch" -> "pftch",
+    "pht_ram" -> "pht"
+  ).toMap
+
+  def getSramSuffix(vn:String):String = {
+    val vns = vn.split("\\.").toSeq
+    val vni = vns.init
+    val vnl = vns.last
+    val pfx = vni.filter(shortMap.contains).map(shortMap)
+    val sfx = if(shortMap.contains(vnl)) shortMap(vnl) else ""
+    val ns = (pfx :+ sfx).filterNot(_ == "")
+    if(ns.nonEmpty) {
+      ns.reduce((a:String, b:String) => s"${a}_${b}")
+    } else {
+      println(s"[Warning]: ${vn} dose not match any abbreviation!")
+      ""
+    }
+  }
 }

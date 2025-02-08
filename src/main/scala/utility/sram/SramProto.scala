@@ -214,7 +214,7 @@ object SramProto {
     val mbist = if(hasMbist) "b" else ""
     val numPort = if(singlePort) 1 else 2
     val maskWidth = width / maskSegments
-    val sramName = Some(s"sram_array_${numPort}p${depth}x${width}m$maskWidth$mcpStr$mbist$suffix")
+    val sramName = Some(s"sram_array_${numPort}p${depth}x${width}m$maskWidth$mcpStr${mbist}_$suffix")
     if(!defMap.contains(sramName.get)) {
       val sramDef = if(singlePort) {
         Definition(new SramArray1P(depth, width, maskSegments, hasMbist, sramName))
