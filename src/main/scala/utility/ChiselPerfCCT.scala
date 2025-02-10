@@ -75,9 +75,71 @@ trait HasDPICUtils extends BlackBox with HasBlackBoxInline {
       |""".stripMargin
 
 
-    setInline(s"$moduleName.v", verilog)
+    setInline(s"$moduleName.sv", verilog)
   }
 
+
+  override def desiredName: String = moduleName
+}
+
+trait HasDPICAssign extends BlackBox with HasBlackBoxInline {
+  var moduleName: String = ""
+  def init(args: Bundle) = {
+    val field = args.elements.map(t => {
+      val name = t._1
+      val tpes = t._2.getClass.getMethods.map(x => x.getName()).toList
+      println(tpes.mkString(","))
+      val tpe = classOf[UInt].getMethod("specifiedDirection")
+      val is_input = tpe.invoke(t._2) == SpecifiedDirection.Input
+      (name, is_input)
+    }).toList.reverse.drop(3)
+
+    val ports_input = field.filter(_._2).map(_._1)
+    val ports_output = field.filter(!_._2).map(_._1)
+    val has_out = ports_output.size != 0
+    val has_in = ports_input.size != 0
+    assert(ports_output.size <= 1)
+    val port_output = if (has_out) ports_output.head  else ""
+
+    if (ports_input.contains(List("clock", "reset", "en"))) {
+      throw new Exception
+    }
+
+    val className = this.getClass().getSimpleName()
+    moduleName = className + "_DPIC_Helper"
+    val dpicFunc = lang.Character.toLowerCase(className.charAt(0)) + className.substring(1)
+    val verilog = s"""
+         |import "DPI-C" function ${if (has_out) "longint unsigned" else "void"} $dpicFunc
+         |(
+         |${if (has_in) ports_input.map(x => "input longint unsigned " + x).mkString("", ",\n  ", "") else ""}
+         |);
+         |
+         |module $moduleName(
+         |input clock,
+         |input reset,
+         |input en
+         |${if (has_out) ",\noutput [63:0] " + port_output else ""}
+         |${if (has_in) ports_input.map(x => "input [63:0] " + x).mkString(",", ",\n", "") else ""}
+         |);
+         |
+         |  ${if (has_out) "reg [63: 0] " + port_output + "reg;" else ""}
+         |  always@(*) begin
+         |    if (en) begin
+         |      ${if (has_out) port_output + "reg" + " = " else "  "}$dpicFunc(${ports_input.mkString("", ", ", "")});
+         |    end
+         |    else begin
+         |      ${if (has_out) port_output + "reg" + " = 0" else ""};
+         |    end
+         |  end
+         |
+         |  ${if (has_out) "assign " + port_output + " = " + port_output + "reg;" else ""}
+         |
+         |endmodule
+         |""".stripMargin
+
+
+    setInline(s"$moduleName.sv", verilog)
+  }
 
   override def desiredName: String = moduleName
 }
@@ -92,7 +154,7 @@ class GlobalSimNegedge extends HasDPICUtils {
   init(io, true)
 }
 
-class CreateInstMeta extends HasDPICUtils {
+class CreateInstMeta extends HasDPICAssign {
   val io = IO(new Bundle() {
     val clock = Input(Clock())
     val reset = Input(Reset())
