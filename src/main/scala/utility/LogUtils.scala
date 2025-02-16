@@ -77,7 +77,7 @@ object XSLog {
         data ++= subdata
       }
       case y: FirrtlFormat => {
-        data += y.bits
+        data += WireInit(y.bits)
         y match {
           case Decimal(d) => fmt += "%d"
           case Hexadecimal(x) => fmt += "%x"
