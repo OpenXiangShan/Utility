@@ -24,9 +24,9 @@ object SelectByFn {
 
   class SelectByFn[T <: Data, SelectT <: Data](gen: T, selectGen: SelectT, numIn: Int, fn: (SelectT, SelectT) => Bool) extends Module {
     val io = IO(new Bundle() {
-      val in = Flipped(Vec(numIn, ValidIO(gen.cloneType)))
-      val sel = Input(Vec(numIn, selectGen.cloneType))
-      val oldest = ValidIO(gen.cloneType)
+      val in = Flipped(Vec(numIn, ValidIO(chiselTypeOf(gen))))
+      val sel = Input(Vec(numIn, chiselTypeOf(selectGen)))
+      val oldest = ValidIO(chiselTypeOf(gen))
     })
     def treeSelect(ins: Seq[(Bool, (T, SelectT))]): Seq[(Bool, (T, SelectT))] = {
       ins.length match {
