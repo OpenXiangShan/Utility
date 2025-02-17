@@ -26,17 +26,17 @@ object SelectByFn {
     val io = IO(new Bundle() {
       val in = Flipped(Vec(numIn, ValidIO(chiselTypeOf(gen))))
       val sel = Input(Vec(numIn, chiselTypeOf(selectGen)))
-      val oldest = ValidIO(chiselTypeOf(gen))
+      val chosen = ValidIO(chiselTypeOf(gen))
     })
     def treeSelect(ins: Seq[(Bool, (T, SelectT))]): Seq[(Bool, (T, SelectT))] = {
       ins.length match {
         case 0 | 1 => ins
         case 2     =>
           val (left, right) = (ins.head, ins.last)
-          val oldest = MuxT(left._1 && right._1,
+          val chosen = MuxT(left._1 && right._1,
                         MuxT(fn(left._2._2, right._2._2), left._2, right._2),
                           MuxT(left._1 && !right._1, left._2, right._2))
-          Seq((left._1 || right._1, oldest))
+          Seq((left._1 || right._1, chosen))
         case _      =>
           val left = treeSelect(ins.take(ins.length/2))
           val right = treeSelect(ins.drop(ins.length/2))
@@ -44,11 +44,11 @@ object SelectByFn {
       }
     }
 
-    val oldest = treeSelect(io.in.zip(io.sel).map {
+    val chosen = treeSelect(io.in.zip(io.sel).map {
       case (elem, sel) => (elem.valid, (elem.bits, sel))
     })
-    io.oldest.valid := oldest.head._1
-    io.oldest.bits  := oldest.head._2._1
+    io.chosen.valid := chosen.head._1
+    io.chosen.bits  := chosen.head._2._1
   }
 
   /**
@@ -70,6 +70,6 @@ object SelectByFn {
     val mod = Module(new SelectByFn(ins.head.bits, sels.head, ins.length, fn)).suggestName(moduleName.getOrElse("SelectByFn"))
     mod.io.in <> ins
     mod.io.sel <> sels
-    mod.io.oldest
+    mod.io.chosen
   }
 }
