@@ -408,7 +408,11 @@ class PerfCCT
                 ss << "," << *it;
             }
             ss << "," << meta->instcode;
-            ss << "," << meta->pc;
+            // pc is unsigned, but sqlite3 only supports signed integer [-2^63, 2^63-1]
+            // if real pc > 2^63-1, it will be stored as negative number 
+            // (negtive pc = real pc - 2^64)
+            // when read a negtive pc, real pc = negtive pc + 2^64
+            ss << "," << int64_t(meta->pc); 
             ss << ");";
 
             rc = sqlite3_exec(mem_db, ss.str().c_str(), callback_temp, 0, &zErrMsg);
