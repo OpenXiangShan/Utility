@@ -2,6 +2,9 @@ import chisel3.Data
 
 package object utility {
   @deprecated
+  val SRAMConflictBehavior = _root_.utility.sram.SRAMConflictBehavior
+  type SRAMConflictBehavior = SRAMConflictBehavior.SRAMConflictBehavior
+  @deprecated
   type SRAMTemplate[T <: Data] = _root_.utility.sram.SRAMTemplate[T]
   @deprecated
   type FoldedSRAMTemplate[T <: Data] = _root_.utility.sram.FoldedSRAMTemplate[T]
