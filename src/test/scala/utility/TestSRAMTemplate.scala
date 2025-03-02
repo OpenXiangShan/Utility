@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.simulator.EphemeralSimulator._
 import org.scalatest.flatspec._
 import org.scalatest.matchers.should.Matchers
+import SRAMConflictBehavior._
 
 abstract class SRAMSpec extends AnyFlatSpec with Matchers {
   def stepUntilTimeoutCycles = 256
@@ -14,7 +15,8 @@ abstract class SRAMSpec extends AnyFlatSpec with Matchers {
     ways: Int,
     singlePort: Boolean,
     holdRead: Boolean,
-    shouldReset: Boolean
+    shouldReset: Boolean,
+    conflictBehavior: SRAMConflictBehavior
   )
 
   // extend the module to provide access to parameters within tests
@@ -25,6 +27,7 @@ abstract class SRAMSpec extends AnyFlatSpec with Matchers {
     singlePort=params.singlePort,
     holdRead=params.holdRead,
     shouldReset=params.shouldReset,
+    conflictBehavior=params.conflictBehavior,
     suffix=Some(suffix)
   )
 
@@ -74,15 +77,15 @@ abstract class SRAMSpec extends AnyFlatSpec with Matchers {
     step
   }
 
-  def read(setIdx: UInt)(implicit dut: DUT): Unit = {
+  def read(setIdx: UInt, waitReady: Boolean = true)(implicit dut: DUT): Unit = {
     val req = dut.io.r.req
     req.valid.poke(true.B)
     req.bits.setIdx.poke(setIdx)
 
-    stepUntil {req.ready.peek().litToBoolean}
+    if (waitReady) stepUntil {req.ready.peek().litToBoolean}
   }
 
-  def getReadResult(implicit dut: DUT): Seq[UInt] = dut.io.r.resp.data.map(_.peek())
+  def getReadResult(implicit dut: DUT): Seq[BigInt] = dut.io.r.resp.data.map(_.peek().litValue)
 
   def readResultExpect(values: Seq[UInt], waymask: Option[UInt] = None)(implicit dut: DUT): Unit = {
     val resp = dut.io.r.resp
@@ -104,13 +107,13 @@ abstract class SRAMSpec extends AnyFlatSpec with Matchers {
     readResultExpect(values, waymask)
   }
 
-  def readThenGet(setIdx: UInt)(implicit dut: DUT): Seq[UInt] = {
+  def readThenGet(setIdx: UInt)(implicit dut: DUT): Seq[BigInt] = {
     read(setIdx)
     step
     getReadResult
   }
 
-  def write(setIdx: UInt, values: Seq[UInt], waymask: Option[UInt] = None)(implicit dut: DUT): Unit = {
+  def write(setIdx: UInt, values: Seq[UInt], waymask: Option[UInt] = None, waitReady: Boolean = true)(implicit dut: DUT): Unit = {
     val req = dut.io.w.req
 
     require(values.length == req.bits.data.length)
@@ -128,7 +131,7 @@ abstract class SRAMSpec extends AnyFlatSpec with Matchers {
       case (input, value) => input.poke(value)
     }
 
-    stepUntil {req.ready.peek().litToBoolean}
+    if (waitReady) stepUntil {req.ready.peek().litToBoolean}
   }
 
   def writeStep(setIdx: UInt, values: Seq[UInt], waymask: Option[UInt] = None)(implicit dut: DUT): Unit = {
@@ -144,26 +147,11 @@ abstract class SRAMSpec extends AnyFlatSpec with Matchers {
   }
 }
 
-class SinglePortSRAMSpec extends SRAMSpec {
-  val defaultParams = DUTParams(
-    entryType = UInt(8.W),
-    sets = 8,
-    ways = 4,
-    singlePort = true,
-    holdRead = false,
-    shouldReset = false
-  )
-
+abstract class CommonSRAMSpec(readableName: String) extends SRAMSpec {
+  def defaultParams: DUTParams
   def withDut(expr: DUT => Unit): Unit = withDut(defaultParams, expr)
 
-  behavior of "single-port SRAM"
-
-  it should "reject read during write" in {
-    withDut { implicit dut =>
-      write(0.U, Seq.fill(dut.params.ways)(0.U))
-      dut.io.r.req.ready.expect(false.B)
-    }
-  }
+  behavior of readableName
 
   it should "return written value for write then read" in {
     withDut { implicit dut =>
@@ -192,7 +180,7 @@ class SinglePortSRAMSpec extends SRAMSpec {
 
   it should "hold read value when holdRead is true" in {
     val holdParams = defaultParams.copy(holdRead = true)
-    withDut(holdParams, implicit dut => {
+    withDut(holdParams, { implicit dut =>
       val dataA = Seq.fill(dut.params.ways)(3.U)
       val dataB = Seq.fill(dut.params.ways)(6.U)
       writeStep(0.U, dataA)
@@ -213,16 +201,16 @@ class SinglePortSRAMSpec extends SRAMSpec {
       writeStep(0.U, data)
       readThenExpect(0.U, data)
       step
-      val resultA = getReadResult.map(_.litValue)
+      val resultA = getReadResult
       step
-      val resultB = getReadResult.map(_.litValue)
+      val resultB = getReadResult
       assert(resultA != resultB)
     }
   }
 
   it should "contain all zero after reset when shouldReset is true" in {
     val resetParams = defaultParams.copy(shouldReset = true)
-    withDut(resetParams, implicit dut => {
+    withDut(resetParams, { implicit dut =>
       for (set <- 0 until dut.params.sets) {
         readThenExpect(set.U, Seq.fill(dut.params.ways)(0.U))
       }
@@ -231,8 +219,314 @@ class SinglePortSRAMSpec extends SRAMSpec {
 
   it should "contain random values after reset when shouldReset is false" in {
     withDut { implicit dut =>
-      val data: Seq[Seq[BigInt]] = (0 to 3).map(set => readThenGet(set.U).map(_.litValue))
+      val data: Seq[Seq[BigInt]] = (0 to 3).map(set => readThenGet(set.U))
       assert(!data.forall(_ == data(0)))
     }
+  }
+}
+
+class SinglePortSRAMSpec extends CommonSRAMSpec("single-port SRAM") {
+  override def defaultParams = DUTParams(
+    entryType = UInt(8.W),
+    sets = 8,
+    ways = 4,
+    singlePort = true,
+    holdRead = false,
+    shouldReset = false,
+    conflictBehavior = CorruptReadWay
+  )
+
+  it should "reject read during write" in {
+    withDut { implicit dut =>
+      write(0.U, Seq.fill(dut.params.ways)(0.U))
+      dut.io.r.req.ready.expect(false.B)
+    }
+  }
+}
+
+class DualPortSRAMSpec extends CommonSRAMSpec("dual-port SRAM") {
+  override def defaultParams = DUTParams(
+    entryType = UInt(8.W),
+    sets = 8,
+    ways = 4,
+    singlePort = false,
+    holdRead = false,
+    shouldReset = false,
+    conflictBehavior = CorruptReadWay
+  )
+
+  def withBehavior(conflictBehavior: SRAMConflictBehavior, expr: DUT => Unit) = {
+    val params = defaultParams.copy(conflictBehavior = conflictBehavior)
+    withDut(params, expr)
+  }
+
+  def testAcceptConflict(conflictBehavior: SRAMConflictBehavior) = {
+    withBehavior(conflictBehavior, { implicit dut =>
+      read(0.U)
+      write(0.U, Seq.fill(dut.params.ways)(0.U))
+      dut.io.r.req.ready.expect(true.B)
+      dut.io.w.req.ready.expect(true.B)
+    })
+  }
+
+  def testBypass(conflictBehavior: SRAMConflictBehavior) = {
+    withBehavior(conflictBehavior, { implicit dut =>
+      val writeDataA = Seq.fill(dut.params.ways)(1.U)
+      writeStep(0.U, writeDataA)
+      step
+
+      val writeDataB = Seq.fill(dut.params.ways)(2.U)
+      read(0.U)
+      writeStep(0.U, writeDataA, Some("b0110".U(dut.params.ways.W)))
+      val readData = getReadResult
+
+      assert(readData == Seq(1, 2, 2, 1))
+    })
+  }
+
+  it should "accept concurrent read and write at different indexes" in {
+    // test for all values of conflictBehavior
+    SRAMConflictBehavior.values.foreach { conflictBehavior =>
+      withBehavior(conflictBehavior, { implicit dut =>
+        read(0.U)
+        write(1.U, Seq.fill(dut.params.ways)(0.U))
+        dut.io.r.req.ready.expect(true.B)
+        dut.io.w.req.ready.expect(true.B)
+      })
+    }
+  }
+
+  it should "(CorruptRead) accept concurrent read and write at the same index" in {
+    testAcceptConflict(CorruptRead)
+  }
+
+  it should "(CorruptRead) return random value during read-write conflict" in {
+    withBehavior(CorruptRead, { implicit dut =>
+      val writeDataA = Seq.fill(dut.params.ways)(1.U)
+      writeStep(0.U, writeDataA)
+      step
+
+      val writeDataB = Seq.fill(dut.params.ways)(2.U)
+      read(0.U)
+      writeStep(0.U, writeDataA)
+      val readData = getReadResult
+
+      assert(readData != writeDataA.map(_.litValue))
+      assert(readData != writeDataB.map(_.litValue))
+      assert(!readData.tail.forall(_ == readData(0)))
+    })
+  }
+
+  it should "(CorruptReadWay) accept concurrent read and write at the same index" in {
+    testAcceptConflict(CorruptReadWay)
+  }
+
+  it should "(CorruptReadWay) return random value for written ways and old value for other ways during read-write conflict" in {
+    withBehavior(CorruptReadWay, { implicit dut =>
+      val writeDataA = Seq.fill(dut.params.ways)(1.U)
+      writeStep(0.U, writeDataA)
+      step
+
+      val writeDataB = Seq.fill(dut.params.ways)(2.U)
+      read(0.U)
+      writeStep(0.U, writeDataA, Some("b0110".U(dut.params.ways.W)))
+      val readData = getReadResult
+
+      assert(readData(0) == 1)
+      assert(readData(1) != 1 && readData(1) != 2)
+      assert(readData(2) != 1 && readData(2) != 2)
+      assert(readData(3) == 1)
+      assert(readData(1) != readData(2))
+    })
+  }
+
+  it should "(BypassWrite) accept concurrent read and write at the same index" in {
+    testAcceptConflict(BypassWrite)
+  }
+
+  it should "(BypassWrite) return new value for written ways and old value for other ways during read-write conflict" in {
+    testBypass(BypassWrite)
+  }
+
+  it should "(BufferWrite) accept concurrent read and write at the same index" in {
+    testAcceptConflict(BufferWrite)
+  }
+
+  it should "(BufferWrite) return new value for written ways and old value for other ways during read-write conflict" in {
+    testBypass(BufferWrite)
+  }
+
+  it should "(BufferWrite) reject read one cycle after read-write conflict" in {
+    withBehavior(BufferWrite, { implicit dut =>
+      read(0.U)
+      writeStep(0.U, Seq.fill(dut.params.ways)(0.U))
+      dut.io.r.req.ready.expect(false.B)
+    })
+  }
+
+  it should "(BufferWrite) accept read two cycles after read-write conflict" in {
+    withBehavior(BufferWrite, { implicit dut =>
+      read(0.U)
+      writeStep(0.U, Seq.fill(dut.params.ways)(0.U))
+      step
+      dut.io.r.req.ready.expect(true.B)
+    })
+  }
+
+  it should "(BufferWrite) return new value for read two cycles after read-write conflict" in {
+    withBehavior(BufferWrite, { implicit dut =>
+      val writeDataA = Seq.fill(dut.params.ways)(1.U)
+      writeStep(0.U, writeDataA)
+      step
+
+      val writeDataB = Seq.fill(dut.params.ways)(2.U)
+      read(0.U)
+      writeStep(0.U, writeDataA, Some("b0110".U(dut.params.ways.W)))
+      step
+
+      val readData = readThenGet(0.U)
+      assert(readData == Seq(1, 2, 2, 1))
+    })
+  }
+
+  it should "(BufferWrite) reject write one cycle after read-write conflict" in {
+    withBehavior(BufferWrite, { implicit dut =>
+      read(0.U)
+      writeStep(0.U, Seq.fill(dut.params.ways)(0.U))
+      dut.io.w.req.ready.expect(false.B)
+    })
+  }
+
+  it should "(BufferWrite) accept write two cycles after read-write conflict" in {
+    withBehavior(BufferWrite, { implicit dut =>
+      read(0.U)
+      writeStep(0.U, Seq.fill(dut.params.ways)(0.U))
+      step
+      dut.io.w.req.ready.expect(true.B)
+    })
+  }
+
+  it should "(BufferWriteLossy) accept concurrent read and write at the same index" in {
+    testAcceptConflict(BufferWriteLossy)
+  }
+
+  it should "(BufferWriteLossy) return new value for written ways and old value for other ways during read-write conflict" in {
+    testBypass(BufferWriteLossy)
+  }
+
+  it should "(BufferWriteLossy) accept read one cycle after read-write conflict" in {
+    withBehavior(BufferWriteLossy, { implicit dut =>
+      read(0.U)
+      writeStep(0.U, Seq.fill(dut.params.ways)(0.U))
+      dut.io.r.req.ready.expect(true.B)
+    })
+  }
+
+  it should "(BufferWriteLossy) return new value for read one cycle after read-write conflict" in {
+    withBehavior(BufferWriteLossy, { implicit dut =>
+      val writeDataA = Seq.fill(dut.params.ways)(1.U)
+      writeStep(0.U, writeDataA)
+      step
+
+      val writeDataB = Seq.fill(dut.params.ways)(2.U)
+      read(0.U)
+      writeStep(0.U, writeDataA, Some("b0110".U(dut.params.ways.W)))
+
+      readThenExpect(0.U, Seq(1.U, 2.U, 2.U, 1.U))
+    })
+  }
+
+  it should "(BufferWriteLossy) accept write one cycle after read-write conflict" in {
+    withBehavior(BufferWriteLossy, { implicit dut =>
+      read(0.U)
+      writeStep(0.U, Seq.fill(dut.params.ways)(0.U))
+      dut.io.w.req.ready.expect(true.B)
+    })
+  }
+
+  it should "(BufferWriteLossy) return new value for write then read at different index after read-write conflict" in {
+    withBehavior(BufferWriteLossy, { implicit dut =>
+      val writeDataA = Seq.fill(dut.params.ways)(1.U)
+      writeStep(0.U, writeDataA)
+      step
+
+      val writeDataB = Seq.fill(dut.params.ways)(2.U)
+      read(1.U)
+      writeStep(1.U, writeDataB)
+
+      val writeDataC = Seq.fill(dut.params.ways)(3.U)
+      writeStep(0.U, writeDataC, Some("b0110".U(dut.params.ways.W)))
+
+      val readData = Seq(1.U, 3.U, 3.U, 1.U)
+      readThenExpect(0.U, readData)
+      readThenExpect(0.U, readData)
+    })
+  }
+
+  it should "(BufferWriteLossy) return new value for write then read at same index after read-write conflict" in {
+    withBehavior(BufferWriteLossy, { implicit dut =>
+      val writeDataA = Seq.fill(dut.params.ways)(1.U)
+      writeStep(0.U, writeDataA)
+      step
+
+      val writeDataB = Seq.fill(dut.params.ways)(2.U)
+      read(0.U)
+      writeStep(0.U, writeDataB)
+
+      val writeDataC = Seq.fill(dut.params.ways)(3.U)
+      writeStep(0.U, writeDataC, Some("b0110".U(dut.params.ways.W)))
+
+      val readData = Seq(2.U, 3.U, 3.U, 2.U)
+      readThenExpect(0.U, readData)
+      readThenExpect(0.U, readData)
+    })
+  }
+
+  it should "(BufferWriteLossy) return new values for read after consecutive read-write conflicts at different index" in {
+    withBehavior(BufferWriteLossy, { implicit dut =>
+      val writeDataA = Seq.fill(dut.params.ways)(1.U)
+      val writeDataB = Seq.fill(dut.params.ways)(2.U)
+      writeStep(0.U, writeDataA)
+      writeStep(1.U, writeDataB)
+
+      val writeDataC = Seq.fill(dut.params.ways)(3.U)
+      read(0.U)
+      writeStep(0.U, writeDataC, Some("b0110".U(dut.params.ways.W)))
+
+      val writeDataD = Seq.fill(dut.params.ways)(4.U)
+      read(1.U)
+      writeStep(1.U, writeDataD, Some("b1010".U(dut.params.ways.W)))
+
+      val readDataA = Seq(1.U, 3.U, 3.U, 1.U)
+      val readDataB = Seq(4.U, 2.U, 4.U, 2.U)
+      readThenExpect(0.U, readDataA)
+      readThenExpect(1.U, readDataB)
+    })
+  }
+
+  it should "(StallWrite) accept read and reject write during read-write conflict" in {
+    withBehavior(StallWrite, { implicit dut =>
+      stepUntil {dut.io.w.req.ready.peek().litToBoolean}
+      step
+
+      val writeData = Seq.fill(dut.params.ways)(0.U)
+      read(0.U)
+      write(0.U, writeData, waitReady = false)
+      dut.io.r.req.ready.expect(true.B)
+      dut.io.w.req.ready.expect(false.B)
+    })
+  }
+
+  it should "(StallRead) reject read and accept write during read-write conflict" in {
+    withBehavior(StallRead, { implicit dut =>
+      stepUntil {dut.io.w.req.ready.peek().litToBoolean}
+      step
+
+      val writeData = Seq.fill(dut.params.ways)(0.U)
+      read(0.U)
+      write(0.U, writeData, waitReady = false)
+      dut.io.r.req.ready.expect(false.B)
+      dut.io.w.req.ready.expect(true.B)
+    })
   }
 }
