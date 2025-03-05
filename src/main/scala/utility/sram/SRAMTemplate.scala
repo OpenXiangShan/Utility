@@ -284,11 +284,14 @@ class SRAMTemplate[T <: Data](
   private val conflictWdataS1 = RegEnable(conflictWdataS0, conflictEnableS0)
   private val conflictValidS1 = WireInit(conflictEarlyS1 && conflictWmaskS1.orR && conflictRaddrS1 === conflictWaddrS1)
 
+  private val conflictInhibitWrite = WireInit(false.B)
+
   private val conflictBufferValid = WireInit(false.B)
   private val conflictBufferCanWrite = WireInit(false.B)
   private val conflictBufferWrite = WireInit(conflictBufferValid && conflictBufferCanWrite)
 
-  private val (ren, wen) = (io.r.req.fire, io.w.req.valid || resetState)
+  private val ren = io.r.req.fire
+  private val wen = io.w.req.valid && !conflictInhibitWrite || conflictBufferWrite || resetState
 
   private val _wmask = if (useBitmask) {
     io.w.req.bits.flattened_bitmask.getOrElse("b1".U)
@@ -403,6 +406,7 @@ class SRAMTemplate[T <: Data](
     }
     case BypassWrite => // Handled elsewhere
     case BufferWrite => {
+      conflictInhibitWrite := conflictValidS0
       // Stall reads and writes when the buffer is valid, which guarantees it can be written to the RAM immediately
       conflictBufferValid := conflictValidS1
       conflictBufferCanWrite := true.B
@@ -412,6 +416,7 @@ class SRAMTemplate[T <: Data](
       conflictStallWrite := conflictBufferValid
     }
     case BufferWriteLossy => {
+      conflictInhibitWrite := conflictValidS0
       conflictBufferValid := RegNext(conflictValidS0 || conflictBufferValid && (!conflictBufferCanWrite || io.w.req.valid), false.B)
       conflictBufferCanWrite := !(io.r.req.valid && conflictRaddrS0 === conflictWaddrS1)
       // Redirect any incoming write to the buffer during buffer writeback
@@ -419,6 +424,7 @@ class SRAMTemplate[T <: Data](
       bypassEnable := conflictBufferValid && RegNext(io.r.req.valid) && conflictRaddrS1 === conflictWaddrS1
     }
     case BufferWriteLossyFast => {
+      conflictInhibitWrite := conflictEarlyS0
       conflictBufferValid := conflictValidS1 || RegNext(conflictBufferValid && (!conflictBufferCanWrite || conflictEnableS0), false.B)
       conflictBufferCanWrite := !(io.r.req.valid && conflictRaddrS0 === conflictWaddrS1)
       // Redirect any incoming write to the buffer when it is valid, to preserve ordering
@@ -427,10 +433,12 @@ class SRAMTemplate[T <: Data](
     }
     // These is bad for timing, but using a less precise signal here would basically give us a single-port RAM
     case StallWrite => {
+      conflictInhibitWrite := conflictValidS0
       conflictStallWrite := conflictValidS0
       bypassEnable := false.B
     }
     case StallRead => {
+      conflictInhibitWrite := conflictValidS0
       conflictStallRead := conflictValidS0
       bypassEnable := false.B
     }
