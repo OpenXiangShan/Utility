@@ -140,9 +140,10 @@ object SRAMConflictBehavior extends Enumeration {
   val BypassWrite = Value
 
   /** Allow read-write conflicts, but the underlying macro does not support it. On a conflict, save write data into a
-    * single-entry buffer. In the following cycle, stall reads and write the buffer contents to the RAM.
+    * single-entry buffer. In the following cycle, stall external reads and writes, and write the buffer contents to the
+    * RAM.
     *
-    * This option requires connected logic to support read stalls.
+    * This option requires connected logic to support read and write stalls.
     */
   val BufferWrite = Value
 
@@ -151,7 +152,7 @@ object SRAMConflictBehavior extends Enumeration {
     * the read. If a second conflict occurs while the buffer is valid, the buffer contents are replaced, and the first
     * write is lost!
     *
-    * This approach has worse timing than BufferWrite, but does not require connected logic to support read stalls.
+    * This approach has worse timing than BufferWrite, but does not require connected logic to support read and write stalls.
     */
   val BufferWriteLossy = Value
 
@@ -402,14 +403,13 @@ class SRAMTemplate[T <: Data](
     }
     case BypassWrite => // Handled elsewhere
     case BufferWrite => {
-      // Stall reads when the buffer is valid, which guarantees it can be written to the RAM immediately
+      // Stall reads and writes when the buffer is valid, which guarantees it can be written to the RAM immediately
       conflictBufferValid := conflictValidS1
       conflictBufferCanWrite := true.B
       conflictStallRead := conflictBufferValid
-      // Redirect any incoming write to the buffer during buffer writeback
-      conflictEnableS0 := conflictEarlyS0 || conflictBufferValid
       // Bypass is not needed since read stall is asserted when buffer is valid
       bypassEnable := false.B
+      conflictStallWrite := conflictBufferValid
     }
     case BufferWriteLossy => {
       conflictBufferValid := RegNext(conflictValidS0 || conflictBufferValid && (!conflictBufferCanWrite || io.w.req.valid), false.B)
