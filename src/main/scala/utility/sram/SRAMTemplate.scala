@@ -16,6 +16,7 @@
 
 package utility.sram
 
+import scala.util.Random
 import chisel3._
 import chisel3.util._
 import sourcecode.FullName
@@ -379,7 +380,11 @@ class SRAMTemplate[T <: Data](
   private val raw_rdata = ramRdata.asTypeOf(Vec(way, wordType))
   require(wdata.getWidth == ramRdata.getWidth)
 
-  val randomData = VecInit(Seq.tabulate(way)(i => LFSR64(seed=Some(i)).asTypeOf(wordType)))
+  val randomData = VecInit(Seq.tabulate(way) { i =>
+    var seed = new Random(i).nextLong()
+    if (seed < 0) seed = -seed
+    LFSR64(increment=io.r.req.valid, seed=Some(seed)).asTypeOf(wordType)
+  })
 
   // conflict handling for dual-port SRAMs
   val conflictStallRead = WireInit(false.B)
