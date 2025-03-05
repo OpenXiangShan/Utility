@@ -74,7 +74,9 @@ abstract class SRAMSpec extends AnyFlatSpec with Matchers {
     }
 
     resetInputs
+    dut.reset.poke(true.B)
     step
+    dut.reset.poke(false.B)
   }
 
   def read(setIdx: UInt, waitReady: Boolean = true)(implicit dut: DUT): Unit = {
