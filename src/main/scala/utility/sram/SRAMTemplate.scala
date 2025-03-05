@@ -411,8 +411,6 @@ class SRAMTemplate[T <: Data](
       conflictBufferValid := conflictValidS1
       conflictBufferCanWrite := true.B
       conflictStallRead := conflictBufferValid
-      // Bypass is not needed since read stall is asserted when buffer is valid
-      bypassEnable := false.B
       conflictStallWrite := conflictBufferValid
     }
     case BufferWriteLossy => {
