@@ -279,7 +279,7 @@ class DualPortSRAMSpec extends CommonSRAMSpec("dual-port SRAM") {
 
       val writeDataB = Seq.fill(dut.params.ways)(2.U)
       read(0.U)
-      writeStep(0.U, writeDataA, Some("b0110".U(dut.params.ways.W)))
+      writeStep(0.U, writeDataB, Some("b0110".U(dut.params.ways.W)))
       val readData = getReadResult
 
       assert(readData == Seq(1, 2, 2, 1))
@@ -383,7 +383,7 @@ class DualPortSRAMSpec extends CommonSRAMSpec("dual-port SRAM") {
 
       val writeDataB = Seq.fill(dut.params.ways)(2.U)
       read(0.U)
-      writeStep(0.U, writeDataA, Some("b0110".U(dut.params.ways.W)))
+      writeStep(0.U, writeDataB, Some("b0110".U(dut.params.ways.W)))
       step
 
       val readData = readThenGet(0.U)
@@ -432,7 +432,7 @@ class DualPortSRAMSpec extends CommonSRAMSpec("dual-port SRAM") {
 
       val writeDataB = Seq.fill(dut.params.ways)(2.U)
       read(0.U)
-      writeStep(0.U, writeDataA, Some("b0110".U(dut.params.ways.W)))
+      writeStep(0.U, writeDataB, Some("b0110".U(dut.params.ways.W)))
 
       readThenExpect(0.U, Seq(1.U, 2.U, 2.U, 1.U))
     })
@@ -499,10 +499,10 @@ class DualPortSRAMSpec extends CommonSRAMSpec("dual-port SRAM") {
       read(1.U)
       writeStep(1.U, writeDataD, Some("b1010".U(dut.params.ways.W)))
 
-      val readDataA = Seq(1.U, 3.U, 3.U, 1.U)
-      val readDataB = Seq(4.U, 2.U, 4.U, 2.U)
-      readThenExpect(0.U, readDataA)
-      readThenExpect(1.U, readDataB)
+      val readDataA = readThenGet(0.U)
+      val readDataB = readThenGet(1.U)
+      assert(readDataA == Seq(1, 3, 3, 1))
+      assert(readDataB == Seq(2, 4, 2, 4))
     })
   }
 
