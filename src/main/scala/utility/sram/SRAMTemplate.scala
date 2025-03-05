@@ -395,6 +395,7 @@ class SRAMTemplate[T <: Data](
     case CorruptReadWay => {
       bypassData := randomData
     }
+    case BypassWrite => // Handled elsewhere
     case BufferWrite => {
       // Stall reads when the buffer is valid, which guarantees it can be written to the RAM immediately
       conflictBufferValid := conflictValidS1
