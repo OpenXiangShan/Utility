@@ -376,12 +376,12 @@ class SplittedSRAMTemplate[T <: Data]
   val innerWidth = gen.getWidth / dataSplit
 
   val array = Seq.fill(setSplit)(Seq.fill(waySplit)(Seq.fill(dataSplit)(
-    Module(new SRAMTemplate(UInt(innerWidth.W), set, way, singlePort,
+    Module(new SRAMTemplate(UInt(innerWidth.W), innerSets, innerWays, singlePort,
     shouldReset, extraReset,
     holdRead, bypassWrite,
     useBitmask,withClockGate,
     separateGateClock, hasMbist, latency, extraHold,
-    extClockGate, suffix
+    extClockGate, Some(suffix.getOrElse(SramHelper.getSramSuffix(valName.value)))
     ))
   )))
 
