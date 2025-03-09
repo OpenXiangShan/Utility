@@ -16,11 +16,20 @@ abstract class SRAMSpec extends AnyFlatSpec with Matchers {
     singlePort: Boolean,
     holdRead: Boolean,
     shouldReset: Boolean,
-    conflictBehavior: SRAMConflictBehavior
+    conflictBehavior: SRAMConflictBehavior,
+    foldedWidth: Int = 1
   )
 
   // extend the module to provide access to parameters within tests
-  class DUT(val params: DUTParams, suffix: String) extends SRAMTemplate(
+  trait DUT {
+    val params: DUTParams
+    val clock: Clock
+    val reset: Reset
+    val r: SRAMReadBus[UInt]
+    val w: SRAMWriteBus[UInt]
+  }
+
+  class SRAMTemplateDUT(override val params: DUTParams, suffix: String) extends SRAMTemplate(
     gen=params.entryType,
     set=params.sets,
     way=params.ways,
@@ -29,7 +38,25 @@ abstract class SRAMSpec extends AnyFlatSpec with Matchers {
     shouldReset=params.shouldReset,
     conflictBehavior=params.conflictBehavior,
     suffix=Some(suffix)
-  )
+  ) with DUT {
+    override val r = io.r
+    override val w = io.w
+  }
+
+  class FoldedSRAMTemplateDUT(override val params: DUTParams, suffix: String) extends FoldedSRAMTemplate(
+    gen=params.entryType,
+    set=params.sets,
+    width=params.foldedWidth,
+    way=params.ways,
+    singlePort=params.singlePort,
+    holdRead=params.holdRead,
+    shouldReset=params.shouldReset,
+    conflictBehavior=params.conflictBehavior,
+    suffix=Some(suffix)
+  ) with DUT {
+    override val r = io.r
+    override val w = io.w
+  }
 
   // FIXME: debug why errors occur if we re-use the same suffix in multiple tests (see below)
   // chisel3.package$ChiselException: Imported Definition information not found for sram_array_1p8x32m8s1h0l1_dut - possibly forgot to add ImportDefinition annotation?
@@ -43,14 +70,19 @@ abstract class SRAMSpec extends AnyFlatSpec with Matchers {
   // at utility.sram.SRAMTemplate.<init>(SRAMTemplate.scala:234)
   var dutCnt = 0
   def makeDut(params: DUTParams) = {
-    val dut = new DUT(params, "dut" + dutCnt)
+    val suffix = "dut" + dutCnt
     dutCnt += 1
-    dut
+
+    if (params.foldedWidth > 1) {
+      new FoldedSRAMTemplateDUT(params, suffix)
+    } else {
+      new SRAMTemplateDUT(params, suffix)
+    }
   }
 
   def resetInputs(implicit dut: DUT): Unit = {
-    dut.io.r.req.valid.poke(false.B)
-    dut.io.w.req.valid.poke(false.B)
+    dut.r.req.valid.poke(false.B)
+    dut.w.req.valid.poke(false.B)
   }
 
   def step(implicit dut: DUT): Unit = {
@@ -68,7 +100,7 @@ abstract class SRAMSpec extends AnyFlatSpec with Matchers {
   }
 
   def initialize(implicit dut: DUT): Unit = {
-    val writeReq = dut.io.w.req
+    val writeReq = dut.w.req
     if (writeReq.bits.waymask.isDefined) {
       require(writeReq.bits.waymask.get.getWidth == writeReq.bits.data.length)
     }
@@ -80,17 +112,17 @@ abstract class SRAMSpec extends AnyFlatSpec with Matchers {
   }
 
   def read(setIdx: UInt, waitReady: Boolean = true)(implicit dut: DUT): Unit = {
-    val req = dut.io.r.req
+    val req = dut.r.req
     req.valid.poke(true.B)
     req.bits.setIdx.poke(setIdx)
 
     if (waitReady) stepUntil {req.ready.peek().litToBoolean}
   }
 
-  def getReadResult(implicit dut: DUT): Seq[BigInt] = dut.io.r.resp.data.map(_.peek().litValue)
+  def getReadResult(implicit dut: DUT): Seq[BigInt] = dut.r.resp.data.map(_.peek().litValue)
 
   def readResultExpect(values: Seq[UInt], waymask: Option[UInt] = None)(implicit dut: DUT): Unit = {
-    val resp = dut.io.r.resp
+    val resp = dut.r.resp
 
     require(values.length == resp.data.length)
     if (waymask.isDefined) {
@@ -116,7 +148,7 @@ abstract class SRAMSpec extends AnyFlatSpec with Matchers {
   }
 
   def write(setIdx: UInt, values: Seq[UInt], waymask: Option[UInt] = None, waitReady: Boolean = true)(implicit dut: DUT): Unit = {
-    val req = dut.io.w.req
+    val req = dut.w.req
 
     require(values.length == req.bits.data.length)
     if (waymask.isDefined) {
@@ -149,7 +181,9 @@ abstract class SRAMSpec extends AnyFlatSpec with Matchers {
   }
 }
 
-abstract class CommonSRAMSpec(readableName: String) extends SRAMSpec {
+abstract class CommonSRAMSpec extends SRAMSpec {
+  def readableName = "SRAM"
+
   def defaultParams: DUTParams
   def withDut(expr: DUT => Unit): Unit = withDut(defaultParams, expr)
 
@@ -229,7 +263,9 @@ abstract class CommonSRAMSpec(readableName: String) extends SRAMSpec {
   // }
 }
 
-class SinglePortSRAMSpec extends CommonSRAMSpec("single-port SRAM") {
+class SinglePortSRAMSpec extends CommonSRAMSpec {
+  override def readableName = "single-port SRAM"
+
   override def defaultParams = DUTParams(
     entryType = UInt(8.W),
     sets = 8,
@@ -243,12 +279,29 @@ class SinglePortSRAMSpec extends CommonSRAMSpec("single-port SRAM") {
   it should "reject read during write" in {
     withDut { implicit dut =>
       write(0.U, Seq.fill(dut.params.ways)(0.U))
-      dut.io.r.req.ready.expect(false.B)
+      dut.r.req.ready.expect(false.B)
     }
   }
 }
 
-class DualPortSRAMSpec extends CommonSRAMSpec("dual-port SRAM") {
+class FoldedSinglePortSRAMSpec extends SinglePortSRAMSpec {
+  override def readableName = "folded single-port SRAM"
+
+  override def defaultParams = DUTParams(
+    entryType = UInt(8.W),
+    sets = 8,
+    ways = 4,
+    singlePort = true,
+    holdRead = false,
+    shouldReset = false,
+    conflictBehavior = CorruptReadWay,
+    foldedWidth = 2
+  )
+}
+
+class DualPortSRAMSpec extends CommonSRAMSpec {
+  override def readableName = "dual-port SRAM"
+
   override def defaultParams = DUTParams(
     entryType = UInt(8.W),
     sets = 8,
@@ -268,8 +321,8 @@ class DualPortSRAMSpec extends CommonSRAMSpec("dual-port SRAM") {
     withBehavior(conflictBehavior, { implicit dut =>
       read(0.U)
       write(0.U, Seq.fill(dut.params.ways)(0.U))
-      dut.io.r.req.ready.expect(true.B)
-      dut.io.w.req.ready.expect(true.B)
+      dut.r.req.ready.expect(true.B)
+      dut.w.req.ready.expect(true.B)
     })
   }
 
@@ -294,8 +347,8 @@ class DualPortSRAMSpec extends CommonSRAMSpec("dual-port SRAM") {
       withBehavior(conflictBehavior, { implicit dut =>
         read(0.U)
         write(1.U, Seq.fill(dut.params.ways)(0.U))
-        dut.io.r.req.ready.expect(true.B)
-        dut.io.w.req.ready.expect(true.B)
+        dut.r.req.ready.expect(true.B)
+        dut.w.req.ready.expect(true.B)
       })
     }
   }
@@ -364,7 +417,7 @@ class DualPortSRAMSpec extends CommonSRAMSpec("dual-port SRAM") {
     withBehavior(BufferWrite, { implicit dut =>
       read(0.U)
       writeStep(0.U, Seq.fill(dut.params.ways)(0.U))
-      dut.io.r.req.ready.expect(false.B)
+      dut.r.req.ready.expect(false.B)
     })
   }
 
@@ -373,7 +426,7 @@ class DualPortSRAMSpec extends CommonSRAMSpec("dual-port SRAM") {
       read(0.U)
       writeStep(0.U, Seq.fill(dut.params.ways)(0.U))
       step
-      dut.io.r.req.ready.expect(true.B)
+      dut.r.req.ready.expect(true.B)
     })
   }
 
@@ -397,7 +450,7 @@ class DualPortSRAMSpec extends CommonSRAMSpec("dual-port SRAM") {
     withBehavior(BufferWrite, { implicit dut =>
       read(0.U)
       writeStep(0.U, Seq.fill(dut.params.ways)(0.U))
-      dut.io.w.req.ready.expect(false.B)
+      dut.w.req.ready.expect(false.B)
     })
   }
 
@@ -406,7 +459,7 @@ class DualPortSRAMSpec extends CommonSRAMSpec("dual-port SRAM") {
       read(0.U)
       writeStep(0.U, Seq.fill(dut.params.ways)(0.U))
       step
-      dut.io.w.req.ready.expect(true.B)
+      dut.w.req.ready.expect(true.B)
     })
   }
 
@@ -422,7 +475,7 @@ class DualPortSRAMSpec extends CommonSRAMSpec("dual-port SRAM") {
     withBehavior(BufferWriteLossy, { implicit dut =>
       read(0.U)
       writeStep(0.U, Seq.fill(dut.params.ways)(0.U))
-      dut.io.r.req.ready.expect(true.B)
+      dut.r.req.ready.expect(true.B)
     })
   }
 
@@ -444,7 +497,7 @@ class DualPortSRAMSpec extends CommonSRAMSpec("dual-port SRAM") {
     withBehavior(BufferWriteLossy, { implicit dut =>
       read(0.U)
       writeStep(0.U, Seq.fill(dut.params.ways)(0.U))
-      dut.io.w.req.ready.expect(true.B)
+      dut.w.req.ready.expect(true.B)
     })
   }
 
@@ -510,27 +563,42 @@ class DualPortSRAMSpec extends CommonSRAMSpec("dual-port SRAM") {
 
   it should "(StallWrite) accept read and reject write during read-write conflict" in {
     withBehavior(StallWrite, { implicit dut =>
-      stepUntil {dut.io.w.req.ready.peek().litToBoolean}
+      stepUntil {dut.w.req.ready.peek().litToBoolean}
       step
 
       val writeData = Seq.fill(dut.params.ways)(0.U)
       read(0.U)
       write(0.U, writeData, waitReady = false)
-      dut.io.r.req.ready.expect(true.B)
-      dut.io.w.req.ready.expect(false.B)
+      dut.r.req.ready.expect(true.B)
+      dut.w.req.ready.expect(false.B)
     })
   }
 
   it should "(StallRead) reject read and accept write during read-write conflict" in {
     withBehavior(StallRead, { implicit dut =>
-      stepUntil {dut.io.w.req.ready.peek().litToBoolean}
+      stepUntil {dut.w.req.ready.peek().litToBoolean}
       step
 
       val writeData = Seq.fill(dut.params.ways)(0.U)
       read(0.U)
       write(0.U, writeData, waitReady = false)
-      dut.io.r.req.ready.expect(false.B)
-      dut.io.w.req.ready.expect(true.B)
+      dut.r.req.ready.expect(false.B)
+      dut.w.req.ready.expect(true.B)
     })
   }
+}
+
+class FoldedDualPortSRAMSpec extends DualPortSRAMSpec {
+  override def readableName = "folded dual-port SRAM"
+
+  override def defaultParams = DUTParams(
+    entryType = UInt(8.W),
+    sets = 8,
+    ways = 4,
+    singlePort = false,
+    holdRead = false,
+    shouldReset = false,
+    conflictBehavior = CorruptReadWay,
+    foldedWidth = 2
+  )
 }
