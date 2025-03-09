@@ -343,10 +343,11 @@ class DualPortSRAMSpec extends CommonSRAMSpec {
 
   it should "accept concurrent read and write at different indexes" in {
     // test for all values of conflictBehavior
+    // addresses should be far enough apart to map to different indexes in the folded version too
     SRAMConflictBehavior.values.foreach { conflictBehavior =>
       withBehavior(conflictBehavior, { implicit dut =>
         read(0.U)
-        write(1.U, Seq.fill(dut.params.ways)(0.U))
+        write(4.U, Seq.fill(dut.params.ways)(0.U))
         dut.r.req.ready.expect(true.B)
         dut.w.req.ready.expect(true.B)
       })
@@ -508,8 +509,8 @@ class DualPortSRAMSpec extends CommonSRAMSpec {
       step
 
       val writeDataB = Seq.fill(dut.params.ways)(2.U)
-      read(1.U)
-      writeStep(1.U, writeDataB)
+      read(4.U)
+      writeStep(4.U, writeDataB)
 
       val writeDataC = Seq.fill(dut.params.ways)(3.U)
       writeStep(0.U, writeDataC, Some("b0110".U(dut.params.ways.W)))
@@ -544,18 +545,18 @@ class DualPortSRAMSpec extends CommonSRAMSpec {
       val writeDataA = Seq.fill(dut.params.ways)(1.U)
       val writeDataB = Seq.fill(dut.params.ways)(2.U)
       writeStep(0.U, writeDataA)
-      writeStep(1.U, writeDataB)
+      writeStep(4.U, writeDataB)
 
       val writeDataC = Seq.fill(dut.params.ways)(3.U)
       read(0.U)
       writeStep(0.U, writeDataC, Some("b0110".U(dut.params.ways.W)))
 
       val writeDataD = Seq.fill(dut.params.ways)(4.U)
-      read(1.U)
-      writeStep(1.U, writeDataD, Some("b1010".U(dut.params.ways.W)))
+      read(4.U)
+      writeStep(4.U, writeDataD, Some("b1010".U(dut.params.ways.W)))
 
       val readDataA = readThenGet(0.U)
-      val readDataB = readThenGet(1.U)
+      val readDataB = readThenGet(4.U)
       assert(readDataA == Seq(1, 3, 3, 1))
       assert(readDataB == Seq(2, 4, 2, 4))
     })
