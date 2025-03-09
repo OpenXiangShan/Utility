@@ -420,7 +420,7 @@ class SplittedSRAMTemplate[T <: Data]
   }
 
   val ren_vec_0 = VecInit((0 until setSplit).map(i => i.U === r_bankSel))
-  val ren_vec_1 = RegNext(ren_vec_0, 0.U.asTypeOf(ren_vec_0))
+  val ren_vec_1 = RegEnable(ren_vec_0, 0.U.asTypeOf(ren_vec_0), io.r.req.valid)
   val ren_vec = ren_vec_1
 
   // only one read/write
