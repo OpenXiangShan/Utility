@@ -38,6 +38,8 @@ object MemReqSource extends Enumeration {
   val Prefetch2L2Stride = Value("Prefetch2L2Stride")
   val Prefetch2L2TP = Value("Prefetch2L2TP")
   val Prefetch2L2Unknown = Value("Prefetch2L2Unknown")
+  val Prefetch2L3Stream = Value("Prefetch2L3Stream")
+  val Prefetch2L3Stride = Value("Prefetch2L3Stride")
   val Prefetch2L3Unknown = Value("Prefetch2L3Unknown")
   val ReqSourceCount = Value("ReqSourceCount")
 
