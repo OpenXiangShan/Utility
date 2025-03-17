@@ -279,7 +279,7 @@ class SRAMTemplate[T <: Data](
   }
 
   rcg.foreach(cg => {
-    cg.dft.fromBroadcast(brcBd.mbist)
+    cg.dft.fromBroadcast(brcBd)
     cg.mbist.req := mbistBd.ack
     cg.mbist.readen := rckEn
     if(singlePort) {
@@ -292,7 +292,7 @@ class SRAMTemplate[T <: Data](
   })
 
   wcg.foreach(cg => {
-    cg.dft.fromBroadcast(brcBd.mbist)
+    cg.dft.fromBroadcast(brcBd)
     cg.mbist.req := mbistBd.ack
     cg.mbist.readen := false.B
     cg.mbist.writeen := wckEn
