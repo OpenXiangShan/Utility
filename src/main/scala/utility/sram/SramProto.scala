@@ -43,12 +43,6 @@ class SramBroadcastBundle extends Bundle {
   val sramCtl = Input(new SramCtlBundle)
 }
 
-class SramTestIO extends Bundle {
-  val mbist      = Input(new SramMbistBundle)
-  val mbistReset = new DFTResetSignals()
-  val sramCtl    = Input(UInt(64.W))
-}
-
 @instantiable
 abstract class SramArray(
   depth: Int,
