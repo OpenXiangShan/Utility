@@ -28,14 +28,19 @@ class SramMbistIO extends Bundle {
   val dft_ram_bp_clken = Input(Bool())
 }
 
+class SramMbistBundle extends Bundle {
+  val ram_hold     = Bool()
+  val ram_bypass   = Bool()
+  val ram_bp_clken = Bool()
+  val ram_aux_clk  = Bool()
+  val ram_aux_ckbp = Bool()
+  val ram_mcp_hold = Bool()
+  val cgen         = Bool()
+}
+
 class SramBroadcastBundle extends Bundle {
-  val ram_hold = Input(Bool())
-  val ram_bypass = Input(Bool())
-  val ram_bp_clken = Input(Bool())
-  val ram_aux_clk = Input(Bool())
-  val ram_aux_ckbp = Input(Bool())
-  val ram_mcp_hold = Input(Bool())
-  val cgen = Input(Bool())
+  val mbist   = Input(new SramMbistBundle)
+  val sramCtl = Input(new SramCtlBundle)
 }
 
 @instantiable
@@ -44,6 +49,7 @@ abstract class SramArray(
   width: Int,
   maskSegments: Int,
   hasMbist: Boolean,
+  hasSramCtl: Boolean,
   sramName: Option[String] = None,
   singlePort: Boolean
 )
@@ -51,6 +57,8 @@ abstract class SramArray(
   require(width % maskSegments == 0)
   @public val mbist = if(hasMbist) Some(IO(new SramMbistIO)) else None
   mbist.foreach(dontTouch(_))
+  @public val sramCtl = Option.when(hasSramCtl)(IO(Input(new SramCtlBundle)))
+  sramCtl.foreach(dontTouch(_))
 
   @public val RW0 = if(singlePort) {
     Some(IO(new Bundle() {
@@ -98,8 +106,9 @@ class SramArray1P(
   width: Int,
   maskSegments: Int,
   hasMbist: Boolean,
+  hasSramCtl: Boolean,
   sramName: Option[String] = None,
-) extends SramArray(depth, width, maskSegments, hasMbist, sramName, true) {
+) extends SramArray(depth, width, maskSegments, hasMbist, hasSramCtl, sramName, true) {
   if(maskSegments > 1) {
     val dataType = Vec(maskSegments, UInt((width / maskSegments).W))
     val array = SyncReadMem(depth, dataType)
@@ -129,8 +138,9 @@ class SramArray2P(
   width: Int,
   maskSegments: Int,
   hasMbist: Boolean,
+  hasSramCtl: Boolean,
   sramName: Option[String] = None
-) extends SramArray(depth, width, maskSegments, hasMbist, sramName, false) {
+) extends SramArray(depth, width, maskSegments, hasMbist, hasSramCtl, sramName, false) {
 
   if(maskSegments > 1) {
     val dataType = Vec(maskSegments, UInt((width / maskSegments).W))
@@ -208,6 +218,7 @@ object SramProto {
     latency: Int,
     writeClock: Option[Clock] = None,
     hasMbist: Boolean,
+    hasSramCtl: Boolean,
     suffix: String = ""
   ): (Instance[SramArray], String) = {
     val mcpStr = s"s${setup}h${hold}l${latency}"
@@ -217,9 +228,9 @@ object SramProto {
     val sramName = Some(s"sram_array_${numPort}p${depth}x${width}m$maskWidth$mcpStr${mbist}_$suffix")
     if(!defMap.contains(sramName.get)) {
       val sramDef = if(singlePort) {
-        Definition(new SramArray1P(depth, width, maskSegments, hasMbist, sramName))
+        Definition(new SramArray1P(depth, width, maskSegments, hasMbist, hasSramCtl, sramName))
       } else {
-        Definition(new SramArray2P(depth, width, maskSegments, hasMbist, sramName))
+        Definition(new SramArray2P(depth, width, maskSegments, hasMbist, hasSramCtl, sramName))
       }
       defMap(sramName.get) = sramDef
     }

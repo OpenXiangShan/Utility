@@ -25,10 +25,10 @@ class CgDftBundle extends Bundle {
   val ram_aux_ckbp = Input(Bool())
   val cgen = Input(Bool())
   def fromBroadcast(brc: SramBroadcastBundle): Unit = {
-    ram_aux_clk := brc.ram_aux_clk
-    ram_aux_ckbp := brc.ram_aux_ckbp
-    ram_mcp_hold := brc.ram_mcp_hold
-    cgen := brc.cgen
+    ram_aux_clk := brc.mbist.ram_aux_clk
+    ram_aux_ckbp := brc.mbist.ram_aux_ckbp
+    ram_mcp_hold := brc.mbist.ram_mcp_hold
+    cgen := brc.mbist.cgen
   }
 }
 
