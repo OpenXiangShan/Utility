@@ -139,7 +139,7 @@ class SRAMWriteBus[T <: Data](
  * @param latency output setup multicycle, witch means how many cycles the data is ready for capture after read sampling clock edge.
  * @param extraHold enable a extra input hold cycle. User should keep all input for one cycle if this option is enabled.
  * @param extClockGate expose clock control signals to IOs to support using external clock gate when doing MBIST.
- * @param hasDebug enable sram debug support.
+ * @param hasSramCtl enable sram ctl support.
  * @param suffix add suffix in the name of SRAM wrapper
  */
 
@@ -150,7 +150,7 @@ class SRAMTemplate[T <: Data](
   useBitmask: Boolean = false, withClockGate: Boolean = false,
   separateGateClock: Boolean = false,
   hasMbist: Boolean = false, latency: Int = 1, extraHold:Boolean = false,
-  extClockGate: Boolean = false, hasDebug: Boolean = false,
+  extClockGate: Boolean = false, hasSramCtl: Boolean = false,
   suffix: Option[String] = None
 )(implicit valName: sourcecode.FullName) extends Module {
   val io = IO(new Bundle {
@@ -193,7 +193,7 @@ class SRAMTemplate[T <: Data](
     latency = latency,
     bist = hasMbist,
     broadcast = io.broadcast,
-    hasDebug = hasDebug,
+    hasSramCtl = hasSramCtl,
     rclk,
     Some(wclk),
     suffix = suffix.getOrElse(SramHelper.getSramSuffix(valName.value)),
@@ -267,7 +267,7 @@ class SRAMTemplate[T <: Data](
   }
 
   private val ramRdata = SramProto.read(array, singlePort, ramRaddr, ramRen)
-  when(ramWen && !brcBd.ram_hold) {
+  when(ramWen && !brcBd.mbist.ram_hold) {
     SramProto.write(array, singlePort, ramWaddr, ramWdata, ramWmask)
   }
 
@@ -279,7 +279,7 @@ class SRAMTemplate[T <: Data](
   }
 
   rcg.foreach(cg => {
-    cg.dft.fromBroadcast(brcBd)
+    cg.dft.fromBroadcast(brcBd.mbist)
     cg.mbist.req := mbistBd.ack
     cg.mbist.readen := rckEn
     if(singlePort) {
@@ -292,7 +292,7 @@ class SRAMTemplate[T <: Data](
   })
 
   wcg.foreach(cg => {
-    cg.dft.fromBroadcast(brcBd)
+    cg.dft.fromBroadcast(brcBd.mbist)
     cg.mbist.req := mbistBd.ack
     cg.mbist.readen := false.B
     cg.mbist.writeen := wckEn
@@ -354,7 +354,7 @@ class SplittedSRAMTemplate[T <: Data]
   useBitmask: Boolean = false, withClockGate: Boolean = false,
   separateGateClock: Boolean = false,
   hasMbist: Boolean = false, latency: Int = 1, extraHold:Boolean = false,
-  extClockGate: Boolean = false, hasDebug: Boolean = false,
+  extClockGate: Boolean = false, hasSramCtl: Boolean = false,
   suffix: Option[String] = None
 )(implicit valName: sourcecode.FullName) extends Module {
   val io = IO(new Bundle() {
@@ -385,7 +385,7 @@ class SplittedSRAMTemplate[T <: Data]
     holdRead, bypassWrite,
     useBitmask,withClockGate,
     separateGateClock, hasMbist, latency, extraHold,
-    extClockGate, hasDebug,
+    extClockGate, hasSramCtl,
     Some(suffix.getOrElse(SramHelper.getSramSuffix(valName.value)))
     ))
   )))
@@ -475,7 +475,7 @@ class FoldedSRAMTemplate[T <: Data](
   withClockGate: Boolean = false, avoidSameAddr: Boolean = false,
   separateGateClock: Boolean = false, // no effect, only supports independent RW cg, only for API compatibility
   hasMbist: Boolean = false, latency: Int = 1,
-  hasDebug: Boolean = false, suffix: Option[String] = None
+  hasSramCtl: Boolean = false, suffix: Option[String] = None
 )(implicit valName: sourcecode.FullName) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
@@ -496,7 +496,7 @@ class FoldedSRAMTemplate[T <: Data](
     shouldReset=shouldReset, extraReset=extraReset, holdRead=holdRead,
     singlePort=singlePort, bypassWrite=bypassWrite, useBitmask=useBitmask,
     withClockGate=withClockGate, separateGateClock=separateGateClock,
-    hasMbist=hasMbist, latency=latency, extraHold = false, hasDebug = hasDebug,
+    hasMbist=hasMbist, latency=latency, extraHold = false, hasSramCtl = hasSramCtl,
     suffix = Some(suffix.getOrElse(SramHelper.getSramSuffix(valName.value)))))
   if (array.extra_reset.isDefined) {
     array.extra_reset.get := extra_reset.get
@@ -586,14 +586,14 @@ class FoldedSRAMTemplate[T <: Data](
 }
 class SRAMTemplateWithArbiter[T <: Data](nRead: Int, gen: T, set: Int, way: Int = 1,
   shouldReset: Boolean = false, hasMbist:Boolean = false, latency:Int = 1,
-  hasDebug: Boolean = false) extends Module {
+  hasSramCtl: Boolean = false) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(Vec(nRead, new SRAMReadBus(gen, set, way)))
     val w = Flipped(new SRAMWriteBus(gen, set, way))
   })
 
   val ram = Module(new SRAMTemplate(gen, set, way, shouldReset = shouldReset, holdRead = false, singlePort = true,
-    hasMbist = hasMbist, latency = latency, hasDebug = hasDebug))
+    hasMbist = hasMbist, latency = latency, hasSramCtl = hasSramCtl))
   ram.io.w <> io.w
 
   val readArb = Module(new Arbiter(chiselTypeOf(io.r(0).req.bits), nRead))

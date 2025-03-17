@@ -20,7 +20,7 @@ import chisel3._
 import chisel3.util._
 import chisel3.experimental.hierarchy.core.Instance
 
-class SramDebugBundle extends Bundle {
+class SramCtlBundle extends Bundle {
   val MCR   = UInt(2.W)
   val MCW   = UInt(2.W)
   val RTSEL = UInt(2.W)
