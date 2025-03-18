@@ -25,7 +25,7 @@ import freechips.rocketchip.amba.ahb.AHBImpMaster.bundle
 
 trait HasDPICUtils extends BlackBox with HasBlackBoxInline {
   var moduleName: String = ""
-  def init(args: Bundle, negedge: Boolean = false) {
+  def init(args: Bundle, negedge: Boolean = false, comb_output: Boolean = false) = {
     val field = args.elements.map(t => {
       val name = t._1
       val tpes = t._2.getClass.getMethods.map(x => x.getName()).toList
@@ -40,7 +40,11 @@ trait HasDPICUtils extends BlackBox with HasBlackBoxInline {
     val has_out = ports_output.size != 0
     val has_in = ports_input.size != 0
     assert(ports_output.size <= 1)
+    assert(if (has_out) true else !comb_output)
     val port_output = if (has_out) ports_output.head else ""
+    val out_reg = port_output + "_reg"
+    val assign = if (comb_output) "=" else "<="
+    val clock = if (comb_output) "*" else ((if (negedge) "negedge" else "posedge") + " clock")
 
     //field(0)._2
     if (ports_input.contains(List("clock", "reset", "en"))) {
@@ -60,17 +64,23 @@ trait HasDPICUtils extends BlackBox with HasBlackBoxInline {
       |input clock,
       |input reset,
       |input en
-      |${if (has_out) ",\noutput reg[63:0]" + port_output else ""}
+      |${if (has_out) ",\noutput [63:0]" + port_output else ""}
       |${if (has_in) ports_input.map(x => "input [63:0] " + x).mkString(",", ",\n", "") else ""}
       |);
-      |  always@(${if (negedge) "negedge" else "posedge"} clock) begin
+      |  ${if (has_out) "reg [63: 0] " + out_reg + ";" else ""}
+      |  always@($clock) begin
       |    if (reset) begin
-      |      ${if (has_out) port_output + "<= 0" else ""};
+      |      ${if (has_out) out_reg + assign + "0" else ""};
       |    end
       |    else if(en) begin
-      |      ${if (has_out) port_output + "<=" else "  "}$dpicFunc(${ports_input.mkString("", ", ", "")});
+      |      ${if (has_out) out_reg + assign else "  "}$dpicFunc(${ports_input.mkString("", ", ", "")});
+      |    end
+      |    else begin
+      |      ${if (comb_output) out_reg + assign + "0" else ""};
       |    end
       |  end
+      |
+      |  ${if (has_out) "assign " + port_output + " = " + out_reg + ";" else ""}
       |endmodule
       |""".stripMargin
 
@@ -78,68 +88,6 @@ trait HasDPICUtils extends BlackBox with HasBlackBoxInline {
     setInline(s"$moduleName.sv", verilog)
   }
 
-
-  override def desiredName: String = moduleName
-}
-
-trait HasDPICAssign extends BlackBox with HasBlackBoxInline {
-  var moduleName: String = ""
-  def init(args: Bundle) = {
-    val field = args.elements.map(t => {
-      val name = t._1
-      val tpes = t._2.getClass.getMethods.map(x => x.getName()).toList
-      println(tpes.mkString(","))
-      val tpe = classOf[UInt].getMethod("specifiedDirection")
-      val is_input = tpe.invoke(t._2) == SpecifiedDirection.Input
-      (name, is_input)
-    }).toList.reverse.drop(3)
-
-    val ports_input = field.filter(_._2).map(_._1)
-    val ports_output = field.filter(!_._2).map(_._1)
-    val has_out = ports_output.size != 0
-    val has_in = ports_input.size != 0
-    assert(ports_output.size <= 1)
-    val port_output = if (has_out) ports_output.head  else ""
-
-    if (ports_input.contains(List("clock", "reset", "en"))) {
-      throw new Exception
-    }
-
-    val className = this.getClass().getSimpleName()
-    moduleName = className + "_DPIC_Helper"
-    val dpicFunc = lang.Character.toLowerCase(className.charAt(0)) + className.substring(1)
-    val verilog = s"""
-         |import "DPI-C" function ${if (has_out) "longint unsigned" else "void"} $dpicFunc
-         |(
-         |${if (has_in) ports_input.map(x => "input longint unsigned " + x).mkString("", ",\n  ", "") else ""}
-         |);
-         |
-         |module $moduleName(
-         |input clock,
-         |input reset,
-         |input en
-         |${if (has_out) ",\noutput [63:0] " + port_output else ""}
-         |${if (has_in) ports_input.map(x => "input [63:0] " + x).mkString(",", ",\n", "") else ""}
-         |);
-         |
-         |  ${if (has_out) "reg [63: 0] " + port_output + "reg;" else ""}
-         |  always@(*) begin
-         |    if (en) begin
-         |      ${if (has_out) port_output + "reg" + " = " else "  "}$dpicFunc(${ports_input.mkString("", ", ", "")});
-         |    end
-         |    else begin
-         |      ${if (has_out) port_output + "reg" + " = 0" else ""};
-         |    end
-         |  end
-         |
-         |  ${if (has_out) "assign " + port_output + " = " + port_output + "reg;" else ""}
-         |
-         |endmodule
-         |""".stripMargin
-
-
-    setInline(s"$moduleName.sv", verilog)
-  }
 
   override def desiredName: String = moduleName
 }
@@ -154,7 +102,7 @@ class GlobalSimNegedge extends HasDPICUtils {
   init(io, true)
 }
 
-class CreateInstMeta extends HasDPICAssign {
+class CreateInstMeta extends HasDPICUtils {
   val io = IO(new Bundle() {
     val clock = Input(Clock())
     val reset = Input(Reset())
@@ -164,7 +112,7 @@ class CreateInstMeta extends HasDPICAssign {
     val pc = Input(UInt(64.W))
     val instcode = Input(UInt(64.W))
   })
-  init(io)
+  init(io, false, true)
 }
 
 class UpdateInstPos extends HasDPICUtils {
@@ -227,7 +175,16 @@ object PerfCCT {
     enableCCT = enable
   }
 
-  def createInstMetaAtFetch(order_id:UInt, pc:UInt, code:UInt, en: Bool, clock: Clock, reset: Reset): UInt = {
+  def tick(clock: Clock, reset: Reset) {
+    if (enableCCT) {
+      val m = Module(new GlobalSimNegedge)
+      m.io.clock := clock
+      m.io.reset := reset
+      m.io.en := true.B
+    }
+  }
+
+  def createInstMetaAtFetch(order_id: UInt, pc: UInt, code: UInt, en: Bool, clock: Clock, reset: Reset): UInt = {
     if (enableCCT) {
       val m = Module(new CreateInstMeta)
       m.io.clock := clock
@@ -264,7 +221,7 @@ object PerfCCT {
     }
   }
 
-  def CommitInstMeta(order_id:UInt, sn: UInt, block_size:UInt, en: Bool, clock: Clock, reset: Reset) {
+  def CommitInstMeta(order_id: UInt, sn: UInt, block_size: UInt, en: Bool, clock: Clock, reset: Reset) {
     if (enableCCT) {
       val m = Module(new CommitInstMeta)
       m.io.clock := clock
