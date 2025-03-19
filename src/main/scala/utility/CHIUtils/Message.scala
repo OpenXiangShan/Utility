@@ -15,22 +15,29 @@
   * *************************************************************************************
   */
 
-package coupledL2.tl2chi
+package utility
 
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import org.chipsalliance.cde.config.Field
 import scala.math.max
-import coupledL2.{L2ParamKey, TaskBundle}
-import coupledL2.tl2chi.CHICohStates._
-import coupledL2.tl2chi.CHICohStateTrans._
-import coupledL2.tl2chi.CHICohStateFwdedTrans._
+// import coupledL2.L2ParamKey
+// import coupledL2.tl2chi.CHICohStates._
+// import coupledL2.tl2chi.CHICohStateTrans._
+// import coupledL2.tl2chi.CHICohStateFwdedTrans._
 
-case object CHIIssue extends Field[String](Issue.B)
+// case object CHIIssue extends Field[String](Issue.B)
 
-object CHICohStates {
-  val width = 3
+object CHIChannel {
+  def TXREQ = "b001".U
+  def TXRSP = "b010".U
+  def TXDAT = "b100".U
+}
+
+object CHICohStates extends HasCHIMsgConstants {
+  val width = CONSTANTS("RESP_WIDTH")
+  // val width = 3
 
   def I = "b000".U(width.W)
   def SC = "b001".U(width.W)
@@ -55,6 +62,8 @@ object CHICohStates {
 class CHICohStateTrans(val resp: () => UInt)
 
 object CHICohStateTrans {
+
+  import CHICohStates._
 
   val CopyBackWrData_I = new CHICohStateTrans(() => I)
   val CopyBackWrData_UC = new CHICohStateTrans(() => UC)
@@ -99,6 +108,8 @@ object CHICohStateTrans {
 class CHICohStateTransSet(val channel: () => UInt, val opcode: UInt, val set: Seq[CHICohStateTrans])
 
 object CHICohStateTransSet {
+
+  import CHICohStateTrans._
 
   def isValid(set: CHICohStateTransSet, channel: UInt, opcode: UInt, resp: UInt): Bool = {
     channel =/= set.channel() || opcode =/= set.opcode || VecInit(set.set.map(t => t.resp() === resp)).asUInt.orR
@@ -163,7 +174,9 @@ object CHICohStateFwdedTrans {
 class CHICohStateFwdedTransSet(val channel: () => UInt, val opcode: UInt, val set: Seq[CHICohStateFwdedTrans])
 
 object CHICohStateFwdedTransSet {
-  
+
+  import CHICohStateFwdedTrans._
+
   def isValid(set: CHICohStateFwdedTransSet, channel: UInt, opcode: UInt, resp: UInt, fwdState: UInt): Bool =
     channel =/= set.channel() || opcode =/= set.opcode || VecInit(set.set.map(t => t.resp() === resp && t.fwdState() === fwdState)).asUInt.orR
   
@@ -183,8 +196,9 @@ object CHICohStateFwdedTransSet {
   ))
 }
 
-object OrderEncodings {
-  val width = 2
+object OrderEncodings extends HasCHIMsgConstants {
+  // val width = 2
+  val width = CONSTANTS("ORDER_WIDTH")
 
   def None = "b00".U(width.W)
   def RequestAccepted = "b01".U(width.W)
@@ -195,8 +209,9 @@ object OrderEncodings {
   def isRequestOrder(order: UInt): Bool = order >= RequestOrder
 }
 
-object RespErrEncodings {
-  val width = 2
+object RespErrEncodings extends HasCHIMsgConstants {
+  // val width = 2
+  val width = CONSTANTS("RESPERR_WIDTH")
 
   def OK = "b00".U(width.W) // Okay
   def EXOK = "b01".U(width.W) // Exclusive Okay
@@ -204,87 +219,78 @@ object RespErrEncodings {
   def NDERR = "b11".U(width.W) // Non-data Error
 }
 
-
-/**
-  * This object collects constants and related helper methods
-  * to support different CHI issues (versions).
-  */
-object Issue {
-  val B = "B"
-  val C = "C"
-  val Eb = "E.b"
-}
-
 trait HasCHIMsgParameters {
   implicit val p: Parameters
 
-  val issue = p(CHIIssue)
-  val l2CacheParams = p(L2ParamKey)
+  val params = p(CHIParamKey)
 
-  val DEFAULT_CONFIG = Map(
-    "QOS_WIDTH" -> 4,
-    "NODEID_WIDTH" -> 7,
-    "TXNID_WIDTH" -> 8,
-    "LPID_WITH_PADDING_WIDTH" -> 5,
-    "LPID_WIDTH" -> 5,
-    "REQ_OPCODE_WIDTH" -> 6,
-    "RSP_OPCODE_WIDTH" -> 4,
-    "SNP_OPCODE_WIDTH" -> 5,
-    "DAT_OPCODE_WIDTH" -> 3,
-    "ADDR_WIDTH" -> 48,
-    "SIZE_WIDTH" -> 3,
-    "PCRDTYPE_WIDTH" -> 4,
-    "MEMATTR_WIDTH" -> 4,
-    "ORDER_WIDTH" -> 2,
-    "VMIDEXT_WIDTH" -> 8,
-    "RESPERR_WIDTH" -> 2,
-    "RESP_WIDTH" -> 3,
-    "FWDSTATE_WIDTH" -> 3,
-    "DATAPULL_WIDTH" -> 3,
-    "DATASOURCE_WIDTH" -> 3,
-    "CCID_WIDTH" -> 2,
-    "DATAID_WIDTH" -> 2,
-    "DATA_WIDTH" -> 256,
-    "REQ_RSVDC_WIDTH" -> 4,
-    "DAT_RSVDC_WIDTH" -> 4
-  )
+  val issue = params.issue
+  // val l2CacheParams = p(L2ParamKey)
 
-  val B_CONFIG = DEFAULT_CONFIG
+  // val DEFAULT_CONFIG = Map(
+  //   "QOS_WIDTH" -> 4,
+  //   "NODEID_WIDTH" -> 7,
+  //   "TXNID_WIDTH" -> 8,
+  //   "LPID_WITH_PADDING_WIDTH" -> 5,
+  //   "LPID_WIDTH" -> 5,
+  //   "REQ_OPCODE_WIDTH" -> 6,
+  //   "RSP_OPCODE_WIDTH" -> 4,
+  //   "SNP_OPCODE_WIDTH" -> 5,
+  //   "DAT_OPCODE_WIDTH" -> 3,
+  //   "ADDR_WIDTH" -> 48,
+  //   "SIZE_WIDTH" -> 3,
+  //   "PCRDTYPE_WIDTH" -> 4,
+  //   "MEMATTR_WIDTH" -> 4,
+  //   "ORDER_WIDTH" -> 2,
+  //   "VMIDEXT_WIDTH" -> 8,
+  //   "RESPERR_WIDTH" -> 2,
+  //   "RESP_WIDTH" -> 3,
+  //   "FWDSTATE_WIDTH" -> 3,
+  //   "DATAPULL_WIDTH" -> 3,
+  //   "DATASOURCE_WIDTH" -> 3,
+  //   "CCID_WIDTH" -> 2,
+  //   "DATAID_WIDTH" -> 2,
+  //   "DATA_WIDTH" -> 256,
+  //   "REQ_RSVDC_WIDTH" -> 4,
+  //   "DAT_RSVDC_WIDTH" -> 4
+  // )
 
-  val C_CONFIG = B_CONFIG ++ Map(
-    // new width def for existing fields
-    "NODEID_WIDTH" -> 9,
-    "DAT_OPCODE_WIDTH" -> 4,
-    // "ADDR_WIDTH" -> 44
-  )
+  // val B_CONFIG = DEFAULT_CONFIG
 
-  val Eb_CONFIG = C_CONFIG ++ Map(
-    // new width def for existing fields
-    "NODEID_WIDTH" -> 11,
-    "TXNID_WIDTH" -> 12,
-    "LPID_WITH_PADDING_WIDTH" -> 8,
-    "DATASOURCE_WIDTH" -> 4,
-    "REQ_OPCODE_WIDTH" -> 7,
-    "RSP_OPCODE_WIDTH" -> 5,
-    "SNP_OPCODE_WIDTH" -> 5,
-    "DAT_OPCODE_WIDTH" -> 4,
-    // new fields
-    "CBUSY_WIDTH" -> 3,
-    "MPAM_WIDTH" -> 11,
-    "SLCREPHINT_WIDTH" -> 7,
-    "TAGOP_WIDTH" -> 2,
-    "ADDR_WIDTH" -> 48
-  )
+  // val C_CONFIG = B_CONFIG ++ Map(
+  //   // new width def for existing fields
+  //   "NODEID_WIDTH" -> 9,
+  //   "DAT_OPCODE_WIDTH" -> 4,
+  //   // "ADDR_WIDTH" -> 44
+  // )
 
-  val params = Map(
-    Issue.B -> B_CONFIG,
-    Issue.C -> C_CONFIG,
-    Issue.Eb -> Eb_CONFIG
-  )(issue)
+  // val Eb_CONFIG = C_CONFIG ++ Map(
+  //   // new width def for existing fields
+  //   "NODEID_WIDTH" -> 11,
+  //   "TXNID_WIDTH" -> 12,
+  //   "LPID_WITH_PADDING_WIDTH" -> 8,
+  //   "DATASOURCE_WIDTH" -> 4,
+  //   "REQ_OPCODE_WIDTH" -> 7,
+  //   "RSP_OPCODE_WIDTH" -> 5,
+  //   "SNP_OPCODE_WIDTH" -> 5,
+  //   "DAT_OPCODE_WIDTH" -> 4,
+  //   // new fields
+  //   "CBUSY_WIDTH" -> 3,
+  //   "MPAM_WIDTH" -> 11,
+  //   "SLCREPHINT_WIDTH" -> 7,
+  //   "TAGOP_WIDTH" -> 2,
+  //   "ADDR_WIDTH" -> 48
+  // )
 
-  def CONFIG(key: String): Int = {
-    if (params.contains(key)) params(key) else 0
-  }
+  // val params = Map(
+  //   Issue.B -> B_CONFIG,
+  //   Issue.C -> C_CONFIG,
+  //   Issue.Eb -> Eb_CONFIG
+  // )(issue)
+
+  // def CONFIG(key: String): Int = {
+  //   if (params.contains(key)) params(key) else 0
+  // }
 
   def after(x: String, y: String): Boolean = x.compareTo(y) >= 0
 
@@ -294,14 +300,14 @@ trait HasCHIMsgParameters {
   // def Ea_FIELD[T <: Data](x: T): Option[T] = if (after(issue, Issue.Ea)) Some(x) else None
   def Eb_FIELD[T <: Data](x: T): Option[T] = if (after(issue, Issue.Eb)) Some(x) else None
 
-  def dataCheckMethod : Int = l2CacheParams.dataCheck.getOrElse("none").toLowerCase match {
+  def dataCheckMethod : Int = params.enableDataCheck.getOrElse("none").toLowerCase match {
     case "none" => 0
     case "oddparity" => 1
     case "secded" => 2
     case _ => 0
   }
   def enableDataCheck = dataCheckMethod != 0
-  def enablePoison = l2CacheParams.enablePoison
+  def enablePoison = params.enablePoison
 
   def NODEID_WIDTH = CONFIG("NODEID_WIDTH")
 

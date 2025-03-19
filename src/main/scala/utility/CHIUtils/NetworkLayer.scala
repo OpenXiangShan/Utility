@@ -15,13 +15,12 @@
   * *************************************************************************************
   */
 
-package coupledL2.tl2chi
+package utility
 
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.diplomacy.AddressSet
 import org.chipsalliance.cde.config.Field
-import utility.ParallelPriorityMux
 
 /**
   * System Address Map

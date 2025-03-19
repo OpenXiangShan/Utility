@@ -14,7 +14,7 @@
  * See the Mulan PSL v2 for more details.
  ***************************************************************************************/
 
-package coupledL2.tl2chi
+package utility
 
 import chisel3._
 import chisel3.util._
