@@ -164,6 +164,9 @@ object SRAMConflictBehavior extends Enumeration {
 
   /** Do not allow read-write conflicts. Stall the read by de-asserting the ready signal on the read port. */
   val StallRead = Value
+
+  /** Default value when parameter is not specified. */
+  val DefaultBehavior = Value
 }
 import SRAMConflictBehavior._
 
@@ -176,7 +179,7 @@ import SRAMConflictBehavior._
  * @param extraReset add an extra reset port for the SRAM. Not applicable when [[shouldReset]] is false
  * @param holdRead store read value in an hold reg. Output data will use the value of the reg when no read is being served.
  * @param conflictBehavior behavior when read and write with the same address are concurrent. Not applicable in single port SRAM.
- * @param bypassWrite bypass the write to read when read and write with the same address are concurrent. Not applicable in single port SRAM.
+ * @param bypassWrite (for backward compatibility, should replace with conflictBehavior = BypassWrite) bypass the write to read when read and write with the same address are concurrent. Not applicable in single port SRAM.
  * @param useBitmask make one mask bit for every data bit.
  * @param useBitmask make one mask bit for every data bit.
  * @param withClockGate add clock gate to read and write ports, respectively.
@@ -191,8 +194,8 @@ import SRAMConflictBehavior._
 class SRAMTemplate[T <: Data](
   gen: T, set: Int, way: Int = 1, singlePort: Boolean = false,
   shouldReset: Boolean = false, extraReset: Boolean = false,
-  holdRead: Boolean = false,
-  conflictBehavior: SRAMConflictBehavior = CorruptReadWay,
+  holdRead: Boolean = false, bypassWrite: Boolean = false,
+  conflictBehavior: SRAMConflictBehavior = DefaultBehavior,
   useBitmask: Boolean = false, withClockGate: Boolean = false,
   separateGateClock: Boolean = false,
   hasMbist: Boolean = false, latency: Int = 1, extraHold:Boolean = false,
@@ -217,7 +220,9 @@ class SRAMTemplate[T <: Data](
 
   require(latency >= 1)
   // conflictBehavior is only meaningful for dual-port RAMs
-  require(!(singlePort && conflictBehavior != CorruptReadWay))
+  require(!(singlePort && conflictBehavior != DefaultBehavior))
+  // bypassWrite is for backward compatibility, cannot use at the same time as conflictBehavior
+  require(!(bypassWrite && conflictBehavior != DefaultBehavior))
 
   val extra_reset = if (extraReset) Some(IO(Input(Bool()))) else None
 
@@ -396,12 +401,14 @@ class SRAMTemplate[T <: Data](
   val bypassEnable = WireInit(conflictValidS1)
   val bypassMask = WireInit(conflictWmaskS1)
   val bypassData = WireInit(conflictWdataS1)
-  conflictBehavior match {
+
+  val finalConflictBehavior = if (bypassWrite) BypassWrite else conflictBehavior
+  finalConflictBehavior match {
     case CorruptRead => {
       bypassMask := Fill(way, 1.U(1.W))
       bypassData := randomData
     }
-    case CorruptReadWay => {
+    case CorruptReadWay | DefaultBehavior => {
       bypassData := randomData
     }
     case BypassWrite => // Handled elsewhere
@@ -476,6 +483,7 @@ class SplittedSRAMTemplate[T <: Data]
   singlePort: Boolean = false,
   shouldReset: Boolean = false, extraReset: Boolean = false,
   holdRead: Boolean = false, bypassWrite: Boolean = false,
+  conflictBehavior: SRAMConflictBehavior = DefaultBehavior,
   useBitmask: Boolean = false, withClockGate: Boolean = false,
   separateGateClock: Boolean = false,
   hasMbist: Boolean = false, latency: Int = 1, extraHold:Boolean = false,
@@ -506,7 +514,7 @@ class SplittedSRAMTemplate[T <: Data]
   val array = Seq.fill(setSplit)(Seq.fill(waySplit)(Seq.fill(dataSplit)(
     Module(new SRAMTemplate(UInt(innerWidth.W), innerSets, innerWays, singlePort,
     shouldReset, extraReset,
-    holdRead, bypassWrite,
+    holdRead, bypassWrite, conflictBehavior,
     useBitmask,withClockGate,
     separateGateClock, hasMbist, latency, extraHold,
     extClockGate, Some(suffix.getOrElse(SramHelper.getSramSuffix(valName.value)))
@@ -594,8 +602,8 @@ class FoldedSRAMTemplate[T <: Data](
   gen: T, set: Int, width: Int = 4, way: Int = 1,
   setSplit: Int = 1, waySplit: Int = 1, dataSplit: Int = 1,
   shouldReset: Boolean = false, extraReset: Boolean = false,
-  holdRead: Boolean = false, singlePort: Boolean = false,
-  conflictBehavior: SRAMConflictBehavior = CorruptReadWay, useBitmask: Boolean = false,
+  holdRead: Boolean = false, singlePort: Boolean = false, bypassWrite: Boolean = false,
+  conflictBehavior: SRAMConflictBehavior = DefaultBehavior, useBitmask: Boolean = false,
   withClockGate: Boolean = false,
   separateGateClock: Boolean = false, // no effect, only supports independent RW cg, only for API compatibility
   hasMbist: Boolean = false, latency: Int = 1, suffix: Option[String] = None
@@ -617,7 +625,7 @@ class FoldedSRAMTemplate[T <: Data](
   val array = Module(new SplittedSRAMTemplate(gen, set=nRows, way=width*way,
     setSplit=setSplit, waySplit=waySplit, dataSplit=dataSplit,
     shouldReset=shouldReset, extraReset=extraReset, holdRead=holdRead,
-    singlePort=singlePort, conflictBehavior=conflictBehavior, useBitmask=useBitmask,
+    singlePort=singlePort, bypassWrite=bypassWrite, conflictBehavior=conflictBehavior, useBitmask=useBitmask,
     withClockGate=withClockGate, separateGateClock=separateGateClock,
     hasMbist=hasMbist, latency=latency, extraHold = false,
     suffix = Some(suffix.getOrElse(SramHelper.getSramSuffix(valName.value)))))

@@ -273,7 +273,7 @@ class SinglePortSRAMSpec extends CommonSRAMSpec {
     singlePort = true,
     holdRead = false,
     shouldReset = false,
-    conflictBehavior = CorruptReadWay
+    conflictBehavior = DefaultBehavior
   )
 
   it should "reject read during write" in {
@@ -294,7 +294,7 @@ class FoldedSinglePortSRAMSpec extends SinglePortSRAMSpec {
     singlePort = true,
     holdRead = false,
     shouldReset = false,
-    conflictBehavior = CorruptReadWay,
+    conflictBehavior = DefaultBehavior,
     foldedWidth = 2
   )
 }
