@@ -375,6 +375,23 @@ trait HasCHIMsgParameters {
   def MPAM_WIDTH = CONFIG("MPAM_WIDTH") // E.b field. Optional, width 0 or 11. Memory Performance and Monitoring.
 }
 
+trait HasCHIBundleUtils { this: Bundle =>
+  def printFields() = {
+    println(s"===============================")
+    println(s"${this.getClass.getSimpleName} Flit Fields:")
+    val maxNameWidth = this.elements.keys.map(_.length).max
+    var lsb = 0
+    for ((name, data) <- this.elements.toList.reverse) {
+      val width = data.asUInt.getWidth
+      if (width != 0) {
+        val range = s"[${lsb + width - 1}, $lsb]"
+        println(s"%-${maxNameWidth}s\t".format(name) + range)
+        lsb += width
+      }
+    }
+  }
+}
+
 class MemAttr extends Bundle {
   // The Allocate attribute is a an allocation hint.
   // It indicates the recommended allocation policy for a transaction.
@@ -402,7 +419,9 @@ object MemAttr {
   def apply(): MemAttr = apply(false.B, false.B, false.B, false.B)
 }
 
-abstract class CHIBundle(implicit val p: Parameters) extends Bundle with HasCHIMsgParameters
+abstract class CHIBundle(implicit val p: Parameters) extends Bundle
+  with HasCHIMsgParameters
+  with HasCHIBundleUtils
 
 class CHIREQ(implicit p: Parameters) extends CHIBundle {
   // BE CAUTIOUS with the order of the flit fields
