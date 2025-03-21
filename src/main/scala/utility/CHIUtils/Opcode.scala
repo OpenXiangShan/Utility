@@ -15,7 +15,7 @@
   * *************************************************************************************
   */
 
-package utility
+package utility.chi
 
 import chisel3._
 import chisel3.util._

@@ -14,7 +14,7 @@
  * See the Mulan PSL v2 for more details.
  ***************************************************************************************/
 
-package utility
+package utility.chi
 
 import chisel3._
 import chisel3.util._
@@ -22,6 +22,7 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.util._
 import scala.collection.immutable.{ListMap, SeqMap}
+import utility.ChiselDB
 
 class CHILogger(name: String, enable: Boolean)
                (implicit val p: Parameters) extends Module with HasCHIOpcodes {
@@ -34,7 +35,7 @@ class CHILogger(name: String, enable: Boolean)
 
   // packed_flit = true: just dump the whole flit as UInt
   // packed_flit = false: separate every field
-  val packed_flit = !p(CHIIssue).equals(Issue.B)
+  val packed_flit = !issue.equals(Issue.B)
   // *NOTICE: (or TODO) Non-packed flit mode for Issue E.b was currently broken.
 
   // ** !! gather all distinct fields from CHI bundles !! **
@@ -180,16 +181,8 @@ class CHILogger(name: String, enable: Boolean)
 }
 
 object CHILogger {
-  
   def apply(name: String, enable: Boolean)(implicit p: Parameters) = {
     val logger = Module(new CHILogger(name, enable)(p))
-    logger
-  }
-
-  def apply(name: String, issue: String, enable: Boolean)(implicit p: Parameters) = {
-    val logger = Module(new CHILogger(name, enable)(
-      p.alterPartial { case CHIIssue => issue }
-    ))
     logger
   }
 }

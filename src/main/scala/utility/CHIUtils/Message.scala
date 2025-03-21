@@ -15,7 +15,7 @@
   * *************************************************************************************
   */
 
-package utility
+package utility.chi
 
 import chisel3._
 import chisel3.util._
@@ -148,6 +148,7 @@ class CHICohStateFwdedTrans(val resp: () => UInt, val fwdState: () => UInt)
 
 object CHICohStateFwdedTrans {
 
+  import CHICohStates._
   val SnpResp_I_Fwded_I = new CHICohStateFwdedTrans(() => I, () => I)
   val SnpResp_I_Fwded_SC = new CHICohStateFwdedTrans(() => I, () => SC)
   val SnpResp_I_Fwded_UC = new CHICohStateFwdedTrans(() => I, () => UC)
@@ -223,8 +224,8 @@ trait HasCHIMsgParameters {
   implicit val p: Parameters
 
   val params = p(CHIParamKey)
-
   val issue = params.issue
+  def CONFIG(key: String): Int = params.CONFIG(key)
   // val l2CacheParams = p(L2ParamKey)
 
   // val DEFAULT_CONFIG = Map(

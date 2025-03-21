@@ -15,7 +15,7 @@
   * *************************************************************************************
   */
 
-package utility
+package utility.chi
 
 import chisel3._
 import org.chipsalliance.cde.config.Field
