@@ -16,6 +16,7 @@
 
 package utility.sram
 
+import scala.util.Random
 import chisel3._
 import chisel3.util._
 import sourcecode.FullName
@@ -122,6 +123,53 @@ class SRAMWriteBus[T <: Data](
   }
 }
 
+/** Describes the behavior of a dual-port SRAM when there is a simultaneous read and write to the same index. */
+object SRAMConflictBehavior extends Enumeration {
+  type SRAMConflictBehavior = Value
+
+  /** Allow read-write conflicts, but all read data is corrupt. */
+  val CorruptRead = Value
+
+  /** Allow read-write conflicts, but read data is corrupt for ways that were written to. */
+  val CorruptReadWay = Value
+
+  /** Allow read-write conflicts, and bypass write data to read data. This assumes the underlying macro supports
+    * read-write conflicts and behaves like CorruptReadWay, since otherwise we cannot recover read data for ways that
+    * were not written to.
+    */
+  val BypassWrite = Value
+
+  /** Allow read-write conflicts, but the underlying macro does not support it. On a conflict, save write data into a
+    * single-entry buffer. In the following cycle, stall external reads and writes, and write the buffer contents to the
+    * RAM.
+    *
+    * This option requires connected logic to support read and write stalls.
+    */
+  val BufferWrite = Value
+
+  /** Allow read-write conflicts, but the underlying macro does not support it. On a conflict, save the write data into a
+    * single-entry buffer. The buffer contents stay valid until they can be written to the RAM without conflicting with
+    * the read. If a second conflict occurs while the buffer is valid, the buffer contents are replaced, and the first
+    * write is lost!
+    *
+    * This approach has worse timing than BufferWrite, but does not require connected logic to support read and write stalls.
+    */
+  val BufferWriteLossy = Value
+
+  /** The same as BufferWriteLossy, but tries to improve timing by allowing more frequent loss of buffer contents. */
+  val BufferWriteLossyFast = Value
+
+  /** Do not allow read-write conflicts. Stall the write by de-asserting the ready signal on the write port. */
+  val StallWrite = Value
+
+  /** Do not allow read-write conflicts. Stall the read by de-asserting the ready signal on the read port. */
+  val StallRead = Value
+
+  /** Default value when parameter is not specified. */
+  val DefaultBehavior = Value
+}
+import SRAMConflictBehavior._
+
 /** Class for SRAM implementing
  * @param gen set the entry type
  * @param set set the array depth
@@ -130,7 +178,8 @@ class SRAMWriteBus[T <: Data](
  * @param shouldReset set the SRAM to be resetable. A resetable SRAM will be clear to all zero after reset is deasserted.
  * @param extraReset add an extra reset port for the SRAM. Not applicable when [[shouldReset]] is false
  * @param holdRead store read value in an hold reg. Output data will use the value of the reg when no read is being served.
- * @param bypassWrite bypass the write to read when read and write with the same address are concurrent. Not applicable in single port SRAM.
+ * @param conflictBehavior behavior when read and write with the same address are concurrent. Not applicable in single port SRAM.
+ * @param bypassWrite (for backward compatibility, should replace with conflictBehavior = BypassWrite) bypass the write to read when read and write with the same address are concurrent. Not applicable in single port SRAM.
  * @param useBitmask make one mask bit for every data bit.
  * @param useBitmask make one mask bit for every data bit.
  * @param withClockGate add clock gate to read and write ports, respectively.
@@ -147,6 +196,7 @@ class SRAMTemplate[T <: Data](
   gen: T, set: Int, way: Int = 1, singlePort: Boolean = false,
   shouldReset: Boolean = false, extraReset: Boolean = false,
   holdRead: Boolean = false, bypassWrite: Boolean = false,
+  conflictBehavior: SRAMConflictBehavior = DefaultBehavior,
   useBitmask: Boolean = false, withClockGate: Boolean = false,
   separateGateClock: Boolean = false,
   hasMbist: Boolean = false, latency: Int = 1, extraHold:Boolean = false,
@@ -169,7 +219,13 @@ class SRAMTemplate[T <: Data](
       None
     }
   })
+
   require(latency >= 1)
+  // conflictBehavior is only meaningful for dual-port RAMs
+  require(!(singlePort && conflictBehavior != DefaultBehavior))
+  // bypassWrite is for backward compatibility, cannot use at the same time as conflictBehavior
+  require(!(bypassWrite && conflictBehavior != DefaultBehavior))
+
   val extra_reset = if (extraReset) Some(IO(Input(Bool()))) else None
 
   val wordType = UInt(gen.getWidth.W)
@@ -220,16 +276,50 @@ class SRAMTemplate[T <: Data](
     resetSet := _resetSet
   }
 
-  private val (ren, wen) = (io.r.req.fire, io.w.req.valid || resetState)
+  // conflict handling for dual-port SRAMs
+  private val conflictEarlyS0 = WireInit(io.r.req.valid && io.w.req.valid)
+  private val conflictRaddrS0 = WireInit(io.r.req.bits.setIdx)
+  private val conflictWaddrS0 = WireInit(io.w.req.bits.setIdx)
+  private val conflictWmaskS0 = WireInit(io.w.req.bits.waymask.getOrElse(1.U(1.W)))
+  private val conflictWdataS0 = WireInit(io.w.req.bits.data.asTypeOf(Vec(way, wordType)))
+  private val conflictValidS0 = WireInit(conflictEarlyS0 && conflictWmaskS0.orR && conflictRaddrS0 === conflictWaddrS0)
+
+  private val conflictEnableS0 = WireInit(conflictEarlyS0)
+  private val conflictEarlyS1 = RegNext(conflictEarlyS0, false.B)
+  private val conflictRaddrS1 = RegEnable(conflictRaddrS0, io.r.req.valid) // must be updated on every read to support bypassing buffer contents
+  private val conflictWaddrS1 = RegEnable(conflictWaddrS0, conflictEnableS0)
+  private val conflictWmaskS1 = RegEnable(conflictWmaskS0, conflictEnableS0)
+  private val conflictWdataS1 = RegEnable(conflictWdataS0, conflictEnableS0)
+  private val conflictValidS1 = WireInit(conflictEarlyS1 && conflictWmaskS1.orR && conflictRaddrS1 === conflictWaddrS1)
+
+  private val conflictInhibitWrite = WireInit(false.B)
+
+  private val conflictBufferValid = WireInit(false.B)
+  private val conflictBufferCanWrite = WireInit(false.B)
+  private val conflictBufferWrite = WireInit(conflictBufferValid && conflictBufferCanWrite)
+
+  private val ren = io.r.req.fire
+  private val wen = io.w.req.valid && !conflictInhibitWrite || conflictBufferWrite || resetState
 
   private val _wmask = if (useBitmask) {
     io.w.req.bits.flattened_bitmask.getOrElse("b1".U)
   } else {
     io.w.req.bits.waymask.getOrElse("b1".U)
   }
-  private val wmask = Mux(resetState, Fill(arrayPortSize, true.B), _wmask)
-  private val wdata = Mux(resetState, 0.U, io.w.req.bits.data.asUInt)
-  private val waddr = Mux(resetState, resetSet, io.w.req.bits.setIdx)
+
+  private val waddr = MuxCase(io.w.req.bits.setIdx, Seq(
+    conflictBufferWrite -> conflictWaddrS1,
+    resetState -> resetSet,
+  ))
+  private val wdata = MuxCase(io.w.req.bits.data.asUInt, Seq(
+    conflictBufferWrite -> conflictWdataS1.asUInt,
+    resetState -> 0.U,
+  ))
+  private val wmask = MuxCase(_wmask, Seq(
+    conflictBufferWrite -> conflictWmaskS1,
+    resetState -> Fill(arrayPortSize, true.B),
+  ))
+
   private val raddr = io.r.req.bits.setIdx
 
   private val mbistWmask = sp.mbistMaskConverse(mbistBd.wmask, mbistBd.selectedOH)
@@ -302,24 +392,69 @@ class SRAMTemplate[T <: Data](
   private val raw_rdata = ramRdata.asTypeOf(Vec(way, wordType))
   require(wdata.getWidth == ramRdata.getWidth)
 
-  // bypass for dual-port SRAMs
-  require(!bypassWrite || bypassWrite && !singlePort)
-  def need_bypass(wen: Bool, waddr: UInt, wmask: UInt, ren: Bool, raddr: UInt) : UInt = {
-    val need_check = ren && wen
-    val need_check_reg = GatedValidRegNext(need_check)
-    val waddr_reg = RegEnable(waddr, need_check)
-    val raddr_reg = RegEnable(raddr, need_check)
-    val wmask_reg = RegEnable(wmask, need_check)
-    require(wmask.getWidth == way)
-    val bypass = Fill(way, need_check_reg && waddr_reg === raddr_reg) & wmask_reg
-    bypass.asTypeOf(UInt(way.W))
+  val randomData = VecInit(Seq.tabulate(way) { i =>
+    var seed = new Random(i).nextLong()
+    if (seed < 0) seed = -seed
+    LFSR64(increment=io.r.req.valid, seed=Some(seed)).asTypeOf(wordType)
+  })
+
+  // conflict handling for dual-port SRAMs
+  val conflictStallRead = WireInit(false.B)
+  val conflictStallWrite = WireInit(false.B)
+  val bypassEnable = WireInit(conflictValidS1)
+  val bypassMask = WireInit(conflictWmaskS1)
+  val bypassData = WireInit(conflictWdataS1)
+
+  val finalConflictBehavior = if (bypassWrite) BypassWrite else conflictBehavior
+  finalConflictBehavior match {
+    case CorruptRead => {
+      bypassMask := Fill(way, 1.U(1.W))
+      bypassData := randomData
+    }
+    case CorruptReadWay | DefaultBehavior => {
+      bypassData := randomData
+    }
+    case BypassWrite => // Handled elsewhere
+    case BufferWrite => {
+      conflictInhibitWrite := conflictValidS0
+      // Stall reads and writes when the buffer is valid, which guarantees it can be written to the RAM immediately
+      conflictBufferValid := conflictValidS1
+      conflictBufferCanWrite := true.B
+      conflictStallRead := conflictBufferValid
+      conflictStallWrite := conflictBufferValid
+    }
+    case BufferWriteLossy => {
+      conflictInhibitWrite := conflictValidS0
+      conflictBufferValid := RegNext(conflictValidS0 || conflictBufferValid && (!conflictBufferCanWrite || io.w.req.valid), false.B)
+      conflictBufferCanWrite := !(io.r.req.valid && conflictRaddrS0 === conflictWaddrS1)
+      // Redirect any incoming write to the buffer during buffer writeback
+      conflictEnableS0 := conflictValidS0 || conflictBufferValid && conflictBufferCanWrite
+      bypassEnable := conflictBufferValid && RegNext(io.r.req.valid) && conflictRaddrS1 === conflictWaddrS1
+    }
+    case BufferWriteLossyFast => {
+      conflictInhibitWrite := conflictEarlyS0
+      conflictBufferValid := conflictValidS1 || RegNext(conflictBufferValid && (!conflictBufferCanWrite || conflictEnableS0), false.B)
+      conflictBufferCanWrite := !(io.r.req.valid && conflictRaddrS0 === conflictWaddrS1)
+      // Redirect any incoming write to the buffer when it is valid, to preserve ordering
+      conflictEnableS0 := io.w.req.valid && (io.r.req.valid || conflictBufferValid)
+      bypassEnable := conflictBufferValid && RegNext(io.r.req.valid) && conflictRaddrS1 === conflictWaddrS1
+    }
+    // These is bad for timing, but using a less precise signal here would basically give us a single-port RAM
+    case StallWrite => {
+      conflictInhibitWrite := conflictValidS0
+      conflictStallWrite := conflictValidS0
+      bypassEnable := false.B
+    }
+    case StallRead => {
+      conflictInhibitWrite := conflictValidS0
+      conflictStallRead := conflictValidS0
+      bypassEnable := false.B
+    }
   }
-  val bypass_wdata = if (bypassWrite) VecInit(RegEnable(io.w.req.bits.data, io.w.req.valid && io.r.req.valid).map(_.asTypeOf(wordType)))
-    else VecInit((0 until way).map(_ => LFSR64().asTypeOf(wordType)))
-  val bypass_mask = need_bypass(io.w.req.valid, io.w.req.bits.setIdx, io.w.req.bits.waymask.getOrElse("b1".U), io.r.req.valid, io.r.req.bits.setIdx)
-  val mem_rdata = {
-    if (singlePort) raw_rdata
-    else VecInit(bypass_mask.asBools.zip(raw_rdata).zip(bypass_wdata).map {
+
+  val finalBypassMask = Fill(way, bypassEnable) & bypassMask.asTypeOf(UInt(way.W))
+  val mem_rdata = if (singlePort) raw_rdata else {
+    VecInit(finalBypassMask.asBools.zip(raw_rdata).zip(bypassData).map {
       case ((m, r), w) => Mux(m, w, r)
     })
   }
@@ -335,8 +470,8 @@ class SRAMTemplate[T <: Data](
 
   private val singleHold = if(singlePort) io.w.req.valid else false.B
   private val resetHold = if(shouldReset) resetState else false.B
-  io.r.req.ready := !resetHold && !singleHold
-  io.w.req.ready := !resetHold
+  io.r.req.ready := !resetHold && !singleHold && !conflictStallRead
+  io.w.req.ready := !resetHold && !conflictStallWrite
 }
 
 /**
@@ -351,6 +486,7 @@ class SplittedSRAMTemplate[T <: Data]
   singlePort: Boolean = false,
   shouldReset: Boolean = false, extraReset: Boolean = false,
   holdRead: Boolean = false, bypassWrite: Boolean = false,
+  conflictBehavior: SRAMConflictBehavior = DefaultBehavior,
   useBitmask: Boolean = false, withClockGate: Boolean = false,
   separateGateClock: Boolean = false,
   hasMbist: Boolean = false, latency: Int = 1, extraHold:Boolean = false,
@@ -382,7 +518,7 @@ class SplittedSRAMTemplate[T <: Data]
   val array = Seq.fill(setSplit)(Seq.fill(waySplit)(Seq.fill(dataSplit)(
     Module(new SRAMTemplate(UInt(innerWidth.W), innerSets, innerWays, singlePort,
     shouldReset, extraReset,
-    holdRead, bypassWrite,
+    holdRead, bypassWrite, conflictBehavior,
     useBitmask,withClockGate,
     separateGateClock, hasMbist, latency, extraHold,
     extClockGate, hasSramCtl,
@@ -470,9 +606,9 @@ class FoldedSRAMTemplate[T <: Data](
   gen: T, set: Int, width: Int = 4, way: Int = 1,
   setSplit: Int = 1, waySplit: Int = 1, dataSplit: Int = 1,
   shouldReset: Boolean = false, extraReset: Boolean = false,
-  holdRead: Boolean = false, singlePort: Boolean = false,
-  bypassWrite: Boolean = false, useBitmask: Boolean = false,
-  withClockGate: Boolean = false, avoidSameAddr: Boolean = false,
+  holdRead: Boolean = false, singlePort: Boolean = false, bypassWrite: Boolean = false,
+  conflictBehavior: SRAMConflictBehavior = DefaultBehavior, useBitmask: Boolean = false,
+  withClockGate: Boolean = false,
   separateGateClock: Boolean = false, // no effect, only supports independent RW cg, only for API compatibility
   hasMbist: Boolean = false, latency: Int = 1,
   hasSramCtl: Boolean = false, suffix: Option[String] = None
@@ -494,7 +630,7 @@ class FoldedSRAMTemplate[T <: Data](
   val array = Module(new SplittedSRAMTemplate(gen, set=nRows, way=width*way,
     setSplit=setSplit, waySplit=waySplit, dataSplit=dataSplit,
     shouldReset=shouldReset, extraReset=extraReset, holdRead=holdRead,
-    singlePort=singlePort, bypassWrite=bypassWrite, useBitmask=useBitmask,
+    singlePort=singlePort, bypassWrite=bypassWrite, conflictBehavior=conflictBehavior, useBitmask=useBitmask,
     withClockGate=withClockGate, separateGateClock=separateGateClock,
     hasMbist=hasMbist, latency=latency, extraHold = false, hasSramCtl = hasSramCtl,
     suffix = Some(suffix.getOrElse(SramHelper.getSramSuffix(valName.value)))))
@@ -512,69 +648,22 @@ class FoldedSRAMTemplate[T <: Data](
   array.io.r.req.valid := ren
   array.io.r.req.bits.setIdx := raddr
 
-  //Double port read and write to the same address to avoid
-  val w_req      = io.w.req.valid
-  val w_data     = io.w.req.bits.data
-  val w_addr     = io.w.req.bits.setIdx >> log2Ceil(width)
-  val w_widthIdx = if (width != 1) io.w.req.bits.setIdx(log2Ceil(width)-1, 0) else 0.U
-  val w_waymask  = if(way > 1 ) io.w.req.bits.waymask.get else 0.U
-
-  val conflict_valid    = WireInit(false.B)
-  val conflict_addr     = WireInit(0.U.asTypeOf(w_addr))
-  val conflict_data     = WireInit(0.U.asTypeOf(w_data))
-  val conflict_widthIdx = WireInit(0.U.asTypeOf(w_widthIdx))
-  val conflict_waymask  = WireInit(0.U.asTypeOf(w_waymask))
-
-  val write_conflict    = w_req && ren && w_addr === raddr
-  val can_write         = conflict_valid && (conflict_addr =/= raddr || !ren)
-  val use_conflict_data = conflict_valid && conflict_addr === RegEnable(raddr, io.r.req.valid) && conflict_widthIdx === ridx
-
-  if (!singlePort && avoidSameAddr) {
-    //Cache write port data and wait for addresses to not conflict
-    val b_valid    = RegInit(false.B)
-    val b_addr     = RegInit(0.U.asTypeOf(w_addr))
-    val b_data     = RegInit(0.U.asTypeOf(w_data))
-    val b_widthIdx = RegInit(0.U.asTypeOf(w_widthIdx))
-    val b_waymask  = RegInit(0.U.asTypeOf(w_waymask))
-    when(write_conflict) {
-      b_valid    := true.B
-      b_addr     := w_addr
-      b_data     := w_data
-      b_widthIdx := w_widthIdx
-      b_waymask  := w_waymask
-    }
-    when(can_write) {
-      b_valid := false.B
-    }
-    conflict_valid    := b_valid
-    conflict_addr     := b_addr
-    conflict_data     := b_data
-    conflict_widthIdx := b_widthIdx
-    conflict_waymask  := b_waymask
-  }
-
-  val resp_data = WireInit(0.U.asTypeOf(io.r.resp.data))
   val rdata = array.io.r.resp.data
   for (w <- 0 until way) {
     val wayData = VecInit(rdata.indices.filter(_ % way == w).map(rdata(_)))
     val holdRidx = HoldUnless(ridx, GatedValidRegNext(io.r.req.valid))
     val realRidx = if (holdRead) holdRidx else ridx
-    resp_data(w) := Mux1H(UIntToOH(realRidx, width), wayData)
+    io.r.resp.data(w) := Mux1H(UIntToOH(realRidx, width), wayData)
   }
-  io.r.resp.data := Mux(use_conflict_data, conflict_data, resp_data)
 
-  val wen = if (!singlePort && avoidSameAddr) (io.w.req.valid && !write_conflict) || can_write else w_req
-  val waddr = if (!singlePort && avoidSameAddr) Mux(conflict_valid, conflict_addr, w_addr) else w_addr
-  val wdata = VecInit(Seq.fill(width)(
-    if (!singlePort && avoidSameAddr) Mux(conflict_valid, conflict_data, w_data)
-    else w_data
-  ).flatten)
-  val widthIdx = if (!singlePort && avoidSameAddr) Mux(conflict_valid, conflict_widthIdx, w_widthIdx) else w_widthIdx
-  val waymask = if (!singlePort && avoidSameAddr) Mux(conflict_valid, conflict_waymask, w_waymask) else w_waymask
+  val wen = io.w.req.valid
+  val wdata = VecInit(Seq.fill(width)(io.w.req.bits.data).flatten)
+  val waddr = io.w.req.bits.setIdx >> log2Ceil(width)
+  val widthIdx = if (width != 1) io.w.req.bits.setIdx(log2Ceil(width)-1, 0) else 0.U
   val wmask = (width, way) match {
     case (1, 1) => 1.U(1.W)
     case (x, 1) => UIntToOH(widthIdx)
-    case _      => VecInit(Seq.tabulate(width*way)(n => (n / way).U === widthIdx && waymask(n % way))).asUInt
+    case _      => VecInit(Seq.tabulate(width*way)(n => (n / way).U === widthIdx && io.w.req.bits.waymask.get(n % way))).asUInt
   }
   require(wmask.getWidth == way*width)
 
