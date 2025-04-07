@@ -335,4 +335,88 @@ object CHIron {
     def logFlitRXSNP(id: String, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool): Unit = {
         logFlit("RXSNP", id, CLog.ChannelRXSNP, clock, reset, nodeId, flit, flitv)
     }
+
+    def logFlitsRNOfRNF(id          : String,
+                        clock       : Clock,
+                        reset       : Reset,
+                        rnId        : UInt,
+                        txreqflit   : UInt,
+                        txreqflitv  : Bool,
+                        rxrspflit   : UInt,
+                        rxrspflitv  : Bool,
+                        rxdatflit   : UInt,
+                        rxdatflitv  : Bool,
+                        rxsnpflit   : UInt,
+                        rxsnpflitv  : Bool,
+                        txrspflit   : UInt,
+                        txrspflitv  : Bool,
+                        txdatflit   : UInt,
+                        txdatflitv  : Bool): Unit = {
+        logFlitTXREQ(id, clock, reset, rnId, txreqflit, txreqflitv)
+        logFlitRXRSP(id, clock, reset, rnId, rxrspflit, rxrspflitv)
+        logFlitRXDAT(id, clock, reset, rnId, rxdatflit, rxdatflitv)
+        logFlitRXSNP(id, clock, reset, rnId, rxsnpflit, rxsnpflitv)
+        logFlitTXRSP(id, clock, reset, rnId, txrspflit, txrspflitv)
+        logFlitTXDAT(id, clock, reset, rnId, txdatflit, txdatflitv)
+    }
+
+    def logFlitsRNOfHNF(id          : String,
+                        clock       : Clock,
+                        reset       : Reset,
+                        hnId        : UInt,
+                        rxreqflit   : UInt,
+                        rxreqflitv  : Bool,
+                        txrspflit   : UInt,
+                        txrspflitv  : Bool,
+                        txdatflit   : UInt,
+                        txdatflitv  : Bool,
+                        txsnpflit   : UInt,
+                        txsnpflitv  : Bool,
+                        rxrspflit   : UInt,
+                        rxrspflitv  : Bool,
+                        rxdatflit   : UInt,
+                        rxdatflitv  : Bool): Unit = {
+        logFlitRXREQ(id, clock, reset, hnId, rxreqflit, rxreqflitv)
+        logFlitTXRSP(id, clock, reset, hnId, txrspflit, txrspflitv)
+        logFlitTXDAT(id, clock, reset, hnId, txdatflit, txdatflitv)
+        logFlitTXSNP(id, clock, reset, hnId, txsnpflit, txsnpflitv)
+        logFlitRXRSP(id, clock, reset, hnId, rxrspflit, rxrspflitv)
+        logFlitRXDAT(id, clock, reset, hnId, rxdatflit, rxdatflitv)
+    }
+
+    def logFlitsSNOfSNF(id          : String,
+                        clock       : Clock,
+                        reset       : Reset,
+                        snId        : UInt,
+                        rxreqflit   : UInt,
+                        rxreqflitv  : Bool,
+                        txrspflit   : UInt,
+                        txrspflitv  : Bool,
+                        txdatflit   : UInt,
+                        txdatflitv  : Bool,
+                        rxdatflit   : UInt,
+                        rxdatflitv  : Bool): Unit = {
+        logFlitRXREQ(id, clock, reset, snId, rxreqflit, rxreqflitv)
+        logFlitTXRSP(id, clock, reset, snId, txrspflit, txrspflitv)
+        logFlitTXDAT(id, clock, reset, snId, txdatflit, txdatflitv)
+        logFlitRXDAT(id, clock, reset, snId, rxdatflit, rxdatflitv)
+    }
+
+    def logFlitsSNOfHNF(id          : String,
+                        clock       : Clock,
+                        reset       : Reset,
+                        hnId        : UInt,
+                        txreqflit   : UInt,
+                        txreqflitv  : Bool,
+                        rxrspflit   : UInt,
+                        rxrspflitv  : Bool,
+                        rxdatflit   : UInt,
+                        rxdatflitv  : Bool,
+                        txdatflit   : UInt,
+                        txdatflitv  : Bool): Unit = {
+        logFlitTXREQ(id, clock, reset, hnId, txreqflit, txreqflitv)
+        logFlitRXRSP(id, clock, reset, hnId, rxrspflit, rxrspflitv)
+        logFlitRXDAT(id, clock, reset, hnId, rxdatflit, rxdatflitv)
+        logFlitTXDAT(id, clock, reset, hnId, txdatflit, txdatflitv)
+    }
 }
