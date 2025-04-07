@@ -144,6 +144,9 @@ object SRAMConflictBehavior extends Enumeration {
     */
   val BypassWrite = BehaviorVal(true)
 
+  /** Read-write conflicts should not occur. If one occurs, it will trigger an assertion failure. */
+  val AssertionFail = BehaviorVal(false)
+
   /** Allow read-write conflicts, but the underlying macro does not support it. On a conflict, save write data into a
     * single-entry buffer. In the following cycle, stall external reads and writes, and write the buffer contents to the
     * RAM.
@@ -431,6 +434,9 @@ class SRAMTemplate[T <: Data](
       bypassData := randomData
     }
     case BypassWrite => // Handled elsewhere
+    case AssertionFail => {
+      bypassEnable := false.B
+    }
     case BufferWrite => {
       conflictInhibitWrite := conflictValidS0
       // Stall reads and writes when the buffer is valid, which guarantees it can be written to the RAM immediately
