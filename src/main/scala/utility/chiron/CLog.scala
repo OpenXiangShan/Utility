@@ -40,10 +40,6 @@ class CHIParameters(
 /* 
 * CLog.B parameters write operations.
 */
-private object CLogBWriteParameters {
-    var singleton = true
-}
-
 private class CLogBWriteParameters(id: String, params: CHIParameters) extends BlackBox with HasBlackBoxInline {
 
     val io = IO(new Bundle {
@@ -51,9 +47,6 @@ private class CLogBWriteParameters(id: String, params: CHIParameters) extends Bl
         val reset = Input(Reset())
         val en = Input(Bool())
     })
-
-    require(singleton, "singleton")
-    singleton = false
 
     val moduleName = "CLogB_StubWriteParameters"
     val dpicFunc = "CLogB_SharedWriteParameters"
