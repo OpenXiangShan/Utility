@@ -14,12 +14,12 @@
 * See the Mulan PSL v2 for more details.
 ***************************************************************************************/
 
-package utility
+package utility.chiron
 
 import chisel3._
 import chisel3.util._
-import utility.CLogBWriteRecord._
-import utility.CLogBWriteParameters._
+import utility.chiron.CLogBWriteRecord._
+import utility.chiron.CLogBWriteParameters._
 
 /*
 * CHI Parameters container.
@@ -237,34 +237,34 @@ private class CLogBWriteRecord(id: String, channel: Int, flitLength: Int, unique
 }
 //
 
-object CHIron {
-
-    object CLog {
+object CLog {
         
-        /* Issue value enumeration */
-        val IssueB: Int = 0
-        val IssueE: Int = 3
+   /* Issue value enumeration */
+   val IssueB: Int = 0
+   val IssueE: Int = 3
 
-        /* Node type enumeration */
-        val NodeTypeRNF: Int = 1
-        val NodeTypeRND: Int = 2
-        val NodeTypeRNI: Int = 3
-        val NodeTypeHNF: Int = 5
-        val NodeTypeHNI: Int = 7
-        val NodeTypeSNF: Int = 9
-        val NodeTypeSNI: Int = 11
-        val NodeTypeMN: Int = 12
+   /* Node type enumeration */
+   val NodeTypeRNF: Int = 1
+   val NodeTypeRND: Int = 2
+   val NodeTypeRNI: Int = 3
+   val NodeTypeHNF: Int = 5
+   val NodeTypeHNI: Int = 7
+   val NodeTypeSNF: Int = 9
+   val NodeTypeSNI: Int = 11
+   val NodeTypeMN: Int = 12
 
-        /* Channel enumeration */
-        val ChannelTXREQ: Int = 0
-        val ChannelTXRSP: Int = 1
-        val ChannelTXDAT: Int = 2
-        val ChannelTXSNP: Int = 3
-        val ChannelRXREQ: Int = 4
-        val ChannelRXRSP: Int = 5
-        val ChannelRXDAT: Int = 6
-        val ChannelRXSNP: Int = 7
-    }
+   /* Channel enumeration */
+   val ChannelTXREQ: Int = 0
+   val ChannelTXRSP: Int = 1
+   val ChannelTXDAT: Int = 2
+   val ChannelTXSNP: Int = 3
+   val ChannelRXREQ: Int = 4
+   val ChannelRXRSP: Int = 5
+   val ChannelRXDAT: Int = 6
+   val ChannelRXSNP: Int = 7
+}
+
+object CLogB {
 
     private var enable = false
 
