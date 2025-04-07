@@ -18,8 +18,6 @@ package utility.chiron
 
 import chisel3._
 import chisel3.util._
-import utility.chiron.CLogBWriteRecord._
-import utility.chiron.CLogBWriteParameters._
 
 /*
 * CHI Parameters container.
