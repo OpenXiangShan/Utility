@@ -2,6 +2,7 @@ package utility.sram
 
 import chisel3._
 import chisel3.simulator.EphemeralSimulator._
+import svsim.Simulation
 import org.scalatest.flatspec._
 import org.scalatest.matchers.should.Matchers
 import SRAMConflictBehavior._
@@ -404,6 +405,18 @@ class DualPortSRAMSpec extends CommonSRAMSpec {
 
   it should "(BypassWrite) return new value for written ways and old value for other ways during read-write conflict" in {
     testBypass(BypassWrite)
+  }
+
+  it should "(AssertionFail) trigger an assertion failure during concurrent read and write at the same index" in {
+    val thrown = intercept[Exception] {
+      withBehavior(AssertionFail, { implicit dut =>
+        read(0.U)
+        write(0.U, Seq.fill(dut.params.ways)(0.U))
+        step
+      })
+    }
+    // no way to directly check for an assertion failure with svsim, this will have to suffice
+    assert(thrown eq Simulation.UnexpectedEndOfMessages)
   }
 
   it should "(BufferWrite) accept concurrent read and write at the same index" in {

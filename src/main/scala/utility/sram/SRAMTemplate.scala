@@ -125,19 +125,27 @@ class SRAMWriteBus[T <: Data](
 
 /** Describes the behavior of a dual-port SRAM when there is a simultaneous read and write to the same index. */
 object SRAMConflictBehavior extends Enumeration {
+  // based on example given in Enumeration documentation
+  protected case class BehaviorVal(macroAllowsConflict: Boolean) extends super.Val
+  import scala.language.implicitConversions
+  implicit def valueToBehaviorVal(x: Value): BehaviorVal = x.asInstanceOf[BehaviorVal]
+
   type SRAMConflictBehavior = Value
 
   /** Allow read-write conflicts, but all read data is corrupt. */
-  val CorruptRead = Value
+  val CorruptRead = BehaviorVal(true)
 
   /** Allow read-write conflicts, but read data is corrupt for ways that were written to. */
-  val CorruptReadWay = Value
+  val CorruptReadWay = BehaviorVal(true)
 
   /** Allow read-write conflicts, and bypass write data to read data. This assumes the underlying macro supports
     * read-write conflicts and behaves like CorruptReadWay, since otherwise we cannot recover read data for ways that
     * were not written to.
     */
-  val BypassWrite = Value
+  val BypassWrite = BehaviorVal(true)
+
+  /** Read-write conflicts should not occur. If one occurs, it will trigger an assertion failure. */
+  val AssertionFail = BehaviorVal(false)
 
   /** Allow read-write conflicts, but the underlying macro does not support it. On a conflict, save write data into a
     * single-entry buffer. In the following cycle, stall external reads and writes, and write the buffer contents to the
@@ -145,7 +153,7 @@ object SRAMConflictBehavior extends Enumeration {
     *
     * This option requires connected logic to support read and write stalls.
     */
-  val BufferWrite = Value
+  val BufferWrite = BehaviorVal(false)
 
   /** Allow read-write conflicts, but the underlying macro does not support it. On a conflict, save the write data into a
     * single-entry buffer. The buffer contents stay valid until they can be written to the RAM without conflicting with
@@ -154,19 +162,19 @@ object SRAMConflictBehavior extends Enumeration {
     *
     * This approach has worse timing than BufferWrite, but does not require connected logic to support read and write stalls.
     */
-  val BufferWriteLossy = Value
+  val BufferWriteLossy = BehaviorVal(false)
 
   /** The same as BufferWriteLossy, but tries to improve timing by allowing more frequent loss of buffer contents. */
-  val BufferWriteLossyFast = Value
+  val BufferWriteLossyFast = BehaviorVal(false)
 
   /** Do not allow read-write conflicts. Stall the write by de-asserting the ready signal on the write port. */
-  val StallWrite = Value
+  val StallWrite = BehaviorVal(false)
 
   /** Do not allow read-write conflicts. Stall the read by de-asserting the ready signal on the read port. */
-  val StallRead = Value
+  val StallRead = BehaviorVal(false)
 
   /** Default value when parameter is not specified. */
-  val DefaultBehavior = Value
+  val DefaultBehavior = CorruptReadWay
 }
 import SRAMConflictBehavior._
 
@@ -221,10 +229,12 @@ class SRAMTemplate[T <: Data](
   })
 
   require(latency >= 1)
+
   // conflictBehavior is only meaningful for dual-port RAMs
   require(!(singlePort && conflictBehavior != DefaultBehavior))
   // bypassWrite is for backward compatibility, cannot use at the same time as conflictBehavior
   require(!(bypassWrite && conflictBehavior != DefaultBehavior))
+  val finalConflictBehavior = if (bypassWrite) BypassWrite else conflictBehavior
 
   val extra_reset = if (extraReset) Some(IO(Input(Bool()))) else None
 
@@ -357,7 +367,8 @@ class SRAMTemplate[T <: Data](
   }
 
   private val ramRdata = SramProto.read(array, singlePort, ramRaddr, ramRen)
-  when(ramWen && !brcBd.mbist.ram_hold) {
+  private val finalRamWen = ramWen && !brcBd.mbist.ram_hold
+  when(finalRamWen) {
     SramProto.write(array, singlePort, ramWaddr, ramWdata, ramWmask)
   }
 
@@ -389,6 +400,15 @@ class SRAMTemplate[T <: Data](
     cg.E := wckEn
   })
 
+  if (!singlePort && !finalConflictBehavior.macroAllowsConflict) {
+    // normally, the conflict handling logic is not triggered if the write mask is all zeroes
+    // but to be conservative, still treat that case as a conflict here
+    assert(
+      !(rckEn && wckEn && ramRen && finalRamWen && ramRaddr === ramWaddr),
+      "A read-write conflict occurred on an SRAM that does not allow it (index=0x%x)",
+      ramRaddr)
+  }
+
   private val raw_rdata = ramRdata.asTypeOf(Vec(way, wordType))
   require(wdata.getWidth == ramRdata.getWidth)
 
@@ -405,16 +425,18 @@ class SRAMTemplate[T <: Data](
   val bypassMask = WireInit(conflictWmaskS1)
   val bypassData = WireInit(conflictWdataS1)
 
-  val finalConflictBehavior = if (bypassWrite) BypassWrite else conflictBehavior
   finalConflictBehavior match {
     case CorruptRead => {
       bypassMask := Fill(way, 1.U(1.W))
       bypassData := randomData
     }
-    case CorruptReadWay | DefaultBehavior => {
+    case CorruptReadWay => {
       bypassData := randomData
     }
     case BypassWrite => // Handled elsewhere
+    case AssertionFail => {
+      bypassEnable := false.B
+    }
     case BufferWrite => {
       conflictInhibitWrite := conflictValidS0
       // Stall reads and writes when the buffer is valid, which guarantees it can be written to the RAM immediately
