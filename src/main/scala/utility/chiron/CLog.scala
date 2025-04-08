@@ -38,6 +38,15 @@ class CHIParameters(
 /* 
 * CLog.B parameters write operations.
 */
+private object CLogBWriteParameters {
+    var uniqueCounter = -1
+    def first: Boolean = uniqueCounter == 0
+    def nextUniqueIndex: Int = {
+        uniqueCounter = uniqueCounter + 1
+        uniqueCounter
+    }
+}
+
 private class CLogBWriteParameters(id: String, params: CHIParameters) extends BlackBox with HasBlackBoxInline {
 
     val io = IO(new Bundle {
@@ -46,24 +55,11 @@ private class CLogBWriteParameters(id: String, params: CHIParameters) extends Bl
         val en = Input(Bool())
     })
 
-    val moduleName = "CLogB_StubWriteParameters"
+    val moduleName = s"CLogB_StubWriteParameters_${CLogBWriteParameters.nextUniqueIndex}"
     val dpicFunc = "CLogB_SharedWriteParameters"
 
     val verilog =
         s"""
-        |import "DPI-C" function void $dpicFunc (
-        |    input   string              id,
-        |    input   int                 issue,
-        |    input   int                 nodeIdWidth,
-        |    input   int                 addrWidth,
-        |    input   int                 reqRsvdcWidth,
-        |    input   int                 datRsvdcWidth,
-        |    input   int                 dataWidth,
-        |    input   int                 dataCheckPresent,
-        |    input   int                 poisonPresent,
-        |    input   int                 mpamPresent
-        |);
-        |
         |module $moduleName (
         |    input   logic               clock,
         |    input   logic               reset,
@@ -95,9 +91,33 @@ private class CLogBWriteParameters(id: String, params: CHIParameters) extends Bl
         |    end
         |
         |endmodule
-        """.stripMargin
+        |""".stripMargin
 
-    setInline(s"$moduleName.sv", verilog)
+    val verilogImport =
+        s"""
+        |import "DPI-C" function void $dpicFunc (
+        |    input   string              id,
+        |    input   int                 issue,
+        |    input   int                 nodeIdWidth,
+        |    input   int                 addrWidth,
+        |    input   int                 reqRsvdcWidth,
+        |    input   int                 datRsvdcWidth,
+        |    input   int                 dataWidth,
+        |    input   int                 dataCheckPresent,
+        |    input   int                 poisonPresent,
+        |    input   int                 mpamPresent
+        |);
+        |
+        |""".stripMargin
+
+    val verilogWithFirstImport = {
+        if (CLogBWriteParameters.first)
+            verilog + verilogImport
+        else
+            verilog
+    }
+
+    setInline(s"$moduleName.sv", verilogWithFirstImport)
 
     override def desiredName: String = moduleName
 }
@@ -108,6 +128,7 @@ private class CLogBWriteParameters(id: String, params: CHIParameters) extends Bl
 */
 private object CLogBWriteTopo {
     var uniqueCounter = -1
+    def first: Boolean = uniqueCounter == 0
     def nextUniqueIndex: Int = {
         uniqueCounter = uniqueCounter + 1
         uniqueCounter
@@ -130,16 +151,6 @@ private class CLogBWriteTopo(id: String, topo: Seq[(Int, Int)], uniqueName: Stri
 
     val verilog =
         s"""
-        |import "DPI-C" function void $dpicFuncWrite (
-        |    input   string              id,
-        |    input   int                 nodeId,
-        |    input   int                 nodeType
-        |);
-        |
-        |import "DPI-C" function void $dpicFuncEnd (
-        |    input   string              id
-        |);
-        |
         |/* $desc */
         |module $moduleName (
         |    input   logic               clock,
@@ -156,9 +167,29 @@ private class CLogBWriteTopo(id: String, topo: Seq[(Int, Int)], uniqueName: Stri
         |    end
         |
         |endmodule
-        """.stripMargin
+        |""".stripMargin
+
+    val verilogImport =
+        s"""
+        |import "DPI-C" function void $dpicFuncWrite (
+        |    input   string              id,
+        |    input   int                 nodeId,
+        |    input   int                 nodeType
+        |);
+        |
+        |import "DPI-C" function void $dpicFuncEnd (
+        |    input   string              id
+        |);
+        |""".stripMargin
+
+    val verilogWithFirstImport = {
+        if (CLogBWriteParameters.first)
+            verilog + verilogImport
+        else
+            verilog
+    }
     
-    setInline(s"$moduleName.sv", verilog)
+    setInline(s"$moduleName.sv", verilogWithFirstImport)
 
     override def desiredName: String = moduleName
 }
@@ -169,6 +200,7 @@ private class CLogBWriteTopo(id: String, topo: Seq[(Int, Int)], uniqueName: Stri
 */
 private object CLogBWriteRecord {
     var uniqueCounter = -1
+    def first: Boolean = uniqueCounter == 0
     def nextUniqueIndex: Int = {
         uniqueCounter = uniqueCounter + 1
         uniqueCounter
@@ -193,15 +225,6 @@ private class CLogBWriteRecord(id: String, channel: Int, flitLength: Int, unique
 
     val verilog =
         s"""
-        |import "DPI-C" function void $dpicFunc (
-        |    input   string              id,
-        |    input   longint             cycletime,
-        |    input   int                 nodeId,
-        |    input   int                 channel,
-        |    input   bit [511:0]         flit,
-        |    input   int                 flitLength
-        |);
-        |
         |/* $desc */
         |module $moduleName (
         |    input   logic               clock,
@@ -220,9 +243,28 @@ private class CLogBWriteRecord(id: String, channel: Int, flitLength: Int, unique
         |    end
         |
         |endmodule
-        """.stripMargin
+        |""".stripMargin
 
-    setInline(s"$moduleName.sv", verilog)
+    val verilogImport =
+        s"""
+        |import "DPI-C" function void $dpicFunc (
+        |    input   string              id,
+        |    input   longint             cycletime,
+        |    input   int                 nodeId,
+        |    input   int                 channel,
+        |    input   bit [511:0]         flit,
+        |    input   int                 flitLength
+        |);
+        |""".stripMargin
+
+    val verilogWithFirstImport = {
+        if (CLogBWriteParameters.first)
+            verilog + verilogImport
+        else
+            verilog
+    }
+
+    setInline(s"$moduleName.sv", verilogWithFirstImport)
 
     override def desiredName: String = moduleName
 }
