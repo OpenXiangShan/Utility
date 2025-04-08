@@ -367,7 +367,7 @@ class SRAMTemplate[T <: Data](
   }
 
   private val ramRdata = SramProto.read(array, singlePort, ramRaddr, ramRen)
-  private val finalRamWen = ramWen && !brcBd.mbist.ram_hold
+  private val finalRamWen = ramWen && !brcBd.ram_hold
   when(finalRamWen) {
     SramProto.write(array, singlePort, ramWaddr, ramWdata, ramWmask)
   }

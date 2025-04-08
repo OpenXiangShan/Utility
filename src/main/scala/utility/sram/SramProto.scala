@@ -28,19 +28,15 @@ class SramMbistIO extends Bundle {
   val dft_ram_bp_clken = Input(Bool())
 }
 
-class SramMbistBundle extends Bundle {
-  val ram_hold     = Bool()
-  val ram_bypass   = Bool()
-  val ram_bp_clken = Bool()
-  val ram_aux_clk  = Bool()
-  val ram_aux_ckbp = Bool()
-  val ram_mcp_hold = Bool()
-  val cgen         = Bool()
-}
-
 class SramBroadcastBundle extends Bundle {
-  val mbist   = Input(new SramMbistBundle)
-  val sramCtl = Input(new SramCtlBundle)
+  val ram_hold     = Input(Bool())
+  val ram_bypass   = Input(Bool())
+  val ram_bp_clken = Input(Bool())
+  val ram_aux_clk  = Input(Bool())
+  val ram_aux_ckbp = Input(Bool())
+  val ram_mcp_hold = Input(Bool())
+  val ram_ctl      = Input(UInt(64.W))
+  val cgen         = Input(Bool())
 }
 
 @instantiable
@@ -57,8 +53,8 @@ abstract class SramArray(
   require(width % maskSegments == 0)
   @public val mbist = if(hasMbist) Some(IO(new SramMbistIO)) else None
   mbist.foreach(dontTouch(_))
-  @public val sramCtl = Option.when(hasSramCtl)(IO(Input(new SramCtlBundle)))
-  sramCtl.foreach(dontTouch(_))
+  @public val ram_ctl = Option.when(hasSramCtl)(IO(Input(UInt(64.W))))
+  ram_ctl.foreach(dontTouch(_))
 
   @public val RW0 = if(singlePort) {
     Some(IO(new Bundle() {
