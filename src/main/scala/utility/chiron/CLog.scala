@@ -225,9 +225,9 @@ private class CLogBWriteRecord(id: String, channel: Int, flitLength: Int, unique
 
     val suffixName = {
         if (uniqueName.isEmpty) 
-            s"${CLogBWriteTopo.nextUniqueIndex}" 
+            s"${CLogBWriteRecord.nextUniqueIndex}" 
         else 
-            s"${CLogBWriteTopo.nextUniqueIndex}_$uniqueName"
+            s"${CLogBWriteRecord.nextUniqueIndex}_$uniqueName"
     }
 
     val moduleName = s"CLogB_StubWriteRecord_${suffixName}_${desc}"
