@@ -143,7 +143,12 @@ private class CLogBWriteTopo(id: String, topo: Seq[(Int, Int)], uniqueName: Stri
         val en = Input(Bool())
     })
 
-    val suffixName = if (uniqueName.isEmpty) s"${CLogBWriteTopo.nextUniqueIndex}" else uniqueName
+    val suffixName = {
+        if (uniqueName.isEmpty) 
+            s"${CLogBWriteTopo.nextUniqueIndex}" 
+        else 
+            s"${CLogBWriteTopo.nextUniqueIndex}_$uniqueName"
+    }
 
     val moduleName = s"CLogB_StubWriteTopo_${suffixName}_${desc}"
     val dpicFuncWrite = "CLogB_SharedWriteTopo"
@@ -218,7 +223,12 @@ private class CLogBWriteRecord(id: String, channel: Int, flitLength: Int, unique
         val flit = Input(UInt(512.W))
     })
 
-    val suffixName = if (uniqueName.isEmpty) s"${CLogBWriteRecord.nextUniqueIndex}" else uniqueName
+    val suffixName = {
+        if (uniqueName.isEmpty) 
+            s"${CLogBWriteTopo.nextUniqueIndex}" 
+        else 
+            s"${CLogBWriteTopo.nextUniqueIndex}_$uniqueName"
+    }
 
     val moduleName = s"CLogB_StubWriteRecord_${suffixName}_${desc}"
     val dpicFunc = "CLogB_SharedWriteRecord"
