@@ -143,7 +143,7 @@ object SramHelper {
     template: RawModule
   ): (Ram2Mbist, Instance[SramArray], String) = {
 
-    val (array, vname) = SramProto(rclk, !dp, set, sp.sramDataBits, sp.sramMaskBits, setup, hold, latency, wclk, bist || broadcast.isDefined, hasSramCtl || broadcast.isDefined, suffix)
+    val (array, vname) = SramProto(rclk, !dp, set, sp.sramDataBits, sp.sramMaskBits, setup, hold, latency, wclk, bist, hasSramCtl, suffix)
     val bdParam = Ram2MbistParams(
       sp,
       set,
@@ -164,12 +164,12 @@ object SramHelper {
     mbist.we := false.B
     mbist.re := false.B
     mbist.wmask := Fill(sp.mbistMaskWidth, true.B)
-    if(broadcast.isDefined || bist) {
-      array.mbist.get.dft_ram_bp_clken := broadcast.get.mbist.ram_bp_clken
-      array.mbist.get.dft_ram_bypass := broadcast.get.mbist.ram_bypass
+    if(bist) {
+      array.mbist.get.dft_ram_bp_clken := broadcast.get.ram_bp_clken
+      array.mbist.get.dft_ram_bypass := broadcast.get.ram_bypass
     }
-    if(broadcast.isDefined || hasSramCtl) {
-      array.sramCtl.get := broadcast.get.sramCtl
+    if(hasSramCtl) {
+      array.ram_ctl.get := broadcast.get.ram_ctl
     }
     if(bist) {
       dontTouch(mbist)
