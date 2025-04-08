@@ -188,7 +188,7 @@ private class CLogBWriteTopo(id: String, topo: Seq[(Int, Int)], uniqueName: Stri
         |""".stripMargin
 
     val verilogWithFirstImport = {
-        if (CLogBWriteParameters.first)
+        if (CLogBWriteTopo.first)
             verilog + verilogImport
         else
             verilog
@@ -268,7 +268,7 @@ private class CLogBWriteRecord(id: String, channel: Int, flitLength: Int, unique
         |""".stripMargin
 
     val verilogWithFirstImport = {
-        if (CLogBWriteParameters.first)
+        if (CLogBWriteRecord.first)
             verilog + verilogImport
         else
             verilog
