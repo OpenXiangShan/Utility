@@ -28,7 +28,6 @@ trait HasDPICUtils extends BlackBox with HasBlackBoxInline {
     val field = args.elements.map(t => {
       val name = t._1
       val tpes = t._2.getClass.getMethods.map(x => x.getName()).toList
-      println(tpes.mkString(","))
       val tpe = classOf[UInt].getMethod("specifiedDirection")
       val is_input = tpe.invoke(t._2) == SpecifiedDirection.Input
       (name, is_input)
