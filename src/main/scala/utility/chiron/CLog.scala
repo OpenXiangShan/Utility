@@ -211,7 +211,7 @@ private object CLogBWriteRecord {
   }
 }
 
-private class CLogBWriteRecord(id: String, channel: Int, flitLength: Int, uniqueName: String = "", desc: String = "") extends BlackBox with HasBlackBoxInline {
+private class CLogBWriteRecord(id: String, channel: Int, flitLength: Int, vTime: Boolean, uniqueName: String = "", desc: String = "") extends BlackBox with HasBlackBoxInline {
 
   val io = IO(new Bundle {
     val clock = Input(Clock())
@@ -232,6 +232,8 @@ private class CLogBWriteRecord(id: String, channel: Int, flitLength: Int, unique
   val moduleName = s"CLogB_StubWriteRecord_${suffixName}_${desc}"
   val dpicFunc = "CLogB_SharedWriteRecord"
 
+  val time = if (vTime) "$time" else "cycleTime"
+
   val verilog =
     s"""
     |/* $desc */
@@ -247,7 +249,7 @@ private class CLogBWriteRecord(id: String, channel: Int, flitLength: Int, unique
     |  always @(posedge clock) begin
     |
     |    if (en && !reset) begin
-    |      $dpicFunc(\"${id}\", cycleTime, nodeId, 32'd${channel}, flit, 32'd${flitLength});
+    |      $dpicFunc(\"${id}\", ${time}, nodeId, 32'd${channel}, flit, 32'd${flitLength});
     |    end
     |  end
     |
@@ -332,53 +334,54 @@ object CLogB {
     }
   }
 
-  def logFlit(desc: String, id: String, channel: Int, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool): Unit = {
+  def logFlit(desc: String, id: String, channel: Int, vTime: Boolean, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool, time: UInt = 0.U, timev: Bool = false.B): Unit = {
     if (enable) {
-      val stub = Module(new CLogBWriteRecord(id, channel, flit.getWidth, "", desc))
+      val stub = Module(new CLogBWriteRecord(id, channel, flit.getWidth, vTime, "", desc))
       val cycle = RegInit(0.U(64.W))
       cycle := cycle + 1.U
       stub.io.clock := clock
       stub.io.reset := reset
       stub.io.en := flitv
-      stub.io.cycleTime := cycle
+      stub.io.cycleTime := Mux(timev, time, cycle)
       stub.io.nodeId := nodeId
       stub.io.flit := flit
     }
   }
 
-  def logFlitTXREQ(id: String, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool): Unit = {
-    logFlit("TXREQ", id, CLog.ChannelTXREQ, clock, reset, nodeId, flit, flitv)
+  def logFlitTXREQ(id: String, vTime: Boolean, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool, time: UInt = 0.U, timev: Bool = false.B): Unit = {
+    logFlit("TXREQ", id, CLog.ChannelTXREQ, vTime, clock, reset, nodeId, flit, flitv, time, timev)
   }
 
-  def logFlitTXRSP(id: String, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool): Unit = {
-    logFlit("TXRSP", id, CLog.ChannelTXRSP, clock, reset, nodeId, flit, flitv)
+  def logFlitTXRSP(id: String, vTime: Boolean, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool, time: UInt = 0.U, timev: Bool = false.B): Unit = {
+    logFlit("TXRSP", id, CLog.ChannelTXRSP, vTime, clock, reset, nodeId, flit, flitv, time, timev)
   }
 
-  def logFlitTXDAT(id: String, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool): Unit = {
-    logFlit("TXDAT", id, CLog.ChannelTXDAT, clock, reset, nodeId, flit, flitv)
+  def logFlitTXDAT(id: String, vTime: Boolean, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool, time: UInt = 0.U, timev: Bool = false.B): Unit = {
+    logFlit("TXDAT", id, CLog.ChannelTXDAT, vTime, clock, reset, nodeId, flit, flitv, time, timev)
   }
 
-  def logFlitTXSNP(id: String, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool): Unit = {
-    logFlit("TXSNP", id, CLog.ChannelTXSNP, clock, reset, nodeId, flit, flitv)
+  def logFlitTXSNP(id: String, vTime: Boolean, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool, time: UInt = 0.U, timev: Bool = false.B): Unit = {
+    logFlit("TXSNP", id, CLog.ChannelTXSNP, vTime, clock, reset, nodeId, flit, flitv, time, timev)
   }
 
-  def logFlitRXREQ(id: String, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool): Unit = {
-    logFlit("RXREQ", id, CLog.ChannelRXREQ, clock, reset, nodeId, flit, flitv)
+  def logFlitRXREQ(id: String, vTime: Boolean, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool, time: UInt = 0.U, timev: Bool = false.B): Unit = {
+    logFlit("RXREQ", id, CLog.ChannelRXREQ, vTime, clock, reset, nodeId, flit, flitv, time, timev)
   }
 
-  def logFlitRXRSP(id: String, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool): Unit = {
-    logFlit("RXRSP", id, CLog.ChannelRXRSP, clock, reset, nodeId, flit, flitv)
+  def logFlitRXRSP(id: String, vTime: Boolean, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool, time: UInt = 0.U, timev: Bool = false.B): Unit = {
+    logFlit("RXRSP", id, CLog.ChannelRXRSP, vTime, clock, reset, nodeId, flit, flitv, time, timev)
   }
 
-  def logFlitRXDAT(id: String, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool): Unit = {
-    logFlit("RXDAT", id, CLog.ChannelRXDAT, clock, reset, nodeId, flit, flitv)
+  def logFlitRXDAT(id: String, vTime: Boolean, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool, time: UInt = 0.U, timev: Bool = false.B): Unit = {
+    logFlit("RXDAT", id, CLog.ChannelRXDAT, vTime, clock, reset, nodeId, flit, flitv, time, timev)
   }
 
-  def logFlitRXSNP(id: String, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool): Unit = {
-    logFlit("RXSNP", id, CLog.ChannelRXSNP, clock, reset, nodeId, flit, flitv)
+  def logFlitRXSNP(id: String, vTime: Boolean, clock: Clock, reset: Reset, nodeId: UInt, flit: UInt, flitv: Bool, time: UInt = 0.U, timev: Bool = false.B): Unit = {
+    logFlit("RXSNP", id, CLog.ChannelRXSNP, vTime, clock, reset, nodeId, flit, flitv, time, timev)
   }
 
   def logFlitsRNOfRNF(id          : String,
+                      vTime     : Boolean,
                       clock       : Clock,
                       reset       : Reset,
                       rnId        : UInt,
@@ -393,16 +396,19 @@ object CLogB {
                       txrspflit   : UInt,
                       txrspflitv  : Bool,
                       txdatflit   : UInt,
-                      txdatflitv  : Bool): Unit = {
-    logFlitTXREQ(id, clock, reset, rnId, txreqflit, txreqflitv)
-    logFlitRXRSP(id, clock, reset, rnId, rxrspflit, rxrspflitv)
-    logFlitRXDAT(id, clock, reset, rnId, rxdatflit, rxdatflitv)
-    logFlitRXSNP(id, clock, reset, rnId, rxsnpflit, rxsnpflitv)
-    logFlitTXRSP(id, clock, reset, rnId, txrspflit, txrspflitv)
-    logFlitTXDAT(id, clock, reset, rnId, txdatflit, txdatflitv)
+                      txdatflitv  : Bool,
+                      time        : UInt = 0.U,
+                      timev       : Bool = false.B): Unit = {
+    logFlitTXREQ(id, vTime, clock, reset, rnId, txreqflit, txreqflitv, time, timev)
+    logFlitRXRSP(id, vTime, clock, reset, rnId, rxrspflit, rxrspflitv, time, timev)
+    logFlitRXDAT(id, vTime, clock, reset, rnId, rxdatflit, rxdatflitv, time, timev)
+    logFlitRXSNP(id, vTime, clock, reset, rnId, rxsnpflit, rxsnpflitv, time, timev)
+    logFlitTXRSP(id, vTime, clock, reset, rnId, txrspflit, txrspflitv, time, timev)
+    logFlitTXDAT(id, vTime, clock, reset, rnId, txdatflit, txdatflitv, time, timev)
   }
 
   def logFlitsRNOfHNF(id          : String,
+                      vTime     : Boolean,
                       clock       : Clock,
                       reset       : Reset,
                       hnId        : UInt,
@@ -417,16 +423,19 @@ object CLogB {
                       rxrspflit   : UInt,
                       rxrspflitv  : Bool,
                       rxdatflit   : UInt,
-                      rxdatflitv  : Bool): Unit = {
-    logFlitRXREQ(id, clock, reset, hnId, rxreqflit, rxreqflitv)
-    logFlitTXRSP(id, clock, reset, hnId, txrspflit, txrspflitv)
-    logFlitTXDAT(id, clock, reset, hnId, txdatflit, txdatflitv)
-    logFlitTXSNP(id, clock, reset, hnId, txsnpflit, txsnpflitv)
-    logFlitRXRSP(id, clock, reset, hnId, rxrspflit, rxrspflitv)
-    logFlitRXDAT(id, clock, reset, hnId, rxdatflit, rxdatflitv)
+                      rxdatflitv  : Bool,
+                      time        : UInt = 0.U,
+                      timev       : Bool = false.B): Unit = {
+    logFlitRXREQ(id, vTime, clock, reset, hnId, rxreqflit, rxreqflitv, time, timev)
+    logFlitTXRSP(id, vTime, clock, reset, hnId, txrspflit, txrspflitv, time, timev)
+    logFlitTXDAT(id, vTime, clock, reset, hnId, txdatflit, txdatflitv, time, timev)
+    logFlitTXSNP(id, vTime, clock, reset, hnId, txsnpflit, txsnpflitv, time, timev)
+    logFlitRXRSP(id, vTime, clock, reset, hnId, rxrspflit, rxrspflitv, time, timev)
+    logFlitRXDAT(id, vTime, clock, reset, hnId, rxdatflit, rxdatflitv, time, timev)
   }
 
   def logFlitsSNOfSNF(id          : String,
+                      vTime     : Boolean,
                       clock       : Clock,
                       reset       : Reset,
                       snId        : UInt,
@@ -437,14 +446,17 @@ object CLogB {
                       txdatflit   : UInt,
                       txdatflitv  : Bool,
                       rxdatflit   : UInt,
-                      rxdatflitv  : Bool): Unit = {
-    logFlitRXREQ(id, clock, reset, snId, rxreqflit, rxreqflitv)
-    logFlitTXRSP(id, clock, reset, snId, txrspflit, txrspflitv)
-    logFlitTXDAT(id, clock, reset, snId, txdatflit, txdatflitv)
-    logFlitRXDAT(id, clock, reset, snId, rxdatflit, rxdatflitv)
+                      rxdatflitv  : Bool,
+                      time        : UInt = 0.U,
+                      timev       : Bool = false.B): Unit = {
+    logFlitRXREQ(id, vTime, clock, reset, snId, rxreqflit, rxreqflitv, time, timev)
+    logFlitTXRSP(id, vTime, clock, reset, snId, txrspflit, txrspflitv, time, timev)
+    logFlitTXDAT(id, vTime, clock, reset, snId, txdatflit, txdatflitv, time, timev)
+    logFlitRXDAT(id, vTime, clock, reset, snId, rxdatflit, rxdatflitv, time, timev)
   }
 
   def logFlitsSNOfHNF(id          : String,
+                      vTime     : Boolean,
                       clock       : Clock,
                       reset       : Reset,
                       hnId        : UInt,
@@ -455,10 +467,12 @@ object CLogB {
                       rxdatflit   : UInt,
                       rxdatflitv  : Bool,
                       txdatflit   : UInt,
-                      txdatflitv  : Bool): Unit = {
-    logFlitTXREQ(id, clock, reset, hnId, txreqflit, txreqflitv)
-    logFlitRXRSP(id, clock, reset, hnId, rxrspflit, rxrspflitv)
-    logFlitRXDAT(id, clock, reset, hnId, rxdatflit, rxdatflitv)
-    logFlitTXDAT(id, clock, reset, hnId, txdatflit, txdatflitv)
+                      txdatflitv  : Bool,
+                      time        : UInt = 0.U,
+                      timev       : Bool = false.B): Unit = {
+    logFlitTXREQ(id, vTime, clock, reset, hnId, txreqflit, txreqflitv, time, timev)
+    logFlitRXRSP(id, vTime, clock, reset, hnId, rxrspflit, rxrspflitv, time, timev)
+    logFlitRXDAT(id, vTime, clock, reset, hnId, rxdatflit, rxdatflitv, time, timev)
+    logFlitTXDAT(id, vTime, clock, reset, hnId, txdatflit, txdatflitv, time, timev)
   }
 }
