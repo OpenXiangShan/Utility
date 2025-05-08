@@ -19,13 +19,13 @@ package utility
 import chisel3._
 import chisel3.util._
 
-class DFTResetSignals extends Bundle{
+class DFTResetSignals extends Bundle {
   val lgc_rst_n = AsyncReset()
   val mode = Bool()
   val scan_mode = Bool()
 }
 
-class ResetGen(SYNC_NUM: Int = 2) extends Module {
+class ResetGen(SYNC_NUM: Int = 3) extends Module {
   val o_reset = IO(Output(AsyncReset()))
   val dft = IO(Input(new DFTResetSignals()))
   private val lgc_rst = !dft.lgc_rst_n.asBool
@@ -49,14 +49,12 @@ case class CellNode(reset: Reset) extends ResetNode
 case class ResetGenNode(children: Seq[ResetNode]) extends ResetNode
 
 object ResetGen {
-  def apply(SYNC_NUM: Int, dft:Option[DFTResetSignals]): AsyncReset = {
+  def apply(SYNC_NUM: Int = 3, dft: Option[DFTResetSignals] = None): AsyncReset = {
     val resetSync = Module(new ResetGen(SYNC_NUM))
     resetSync.dft := dft.getOrElse(0.U.asTypeOf(new DFTResetSignals))
     resetSync.o_reset
   }
-  def apply(SYNC_NUM: Int): AsyncReset = apply(SYNC_NUM, None)
-  def apply(dft:Option[DFTResetSignals]): AsyncReset = apply(2, dft)
-  def apply(): AsyncReset = apply(2, None)
+  def apply(dft: Option[DFTResetSignals]): AsyncReset = apply(3, dft)
 
   def apply(resetTree: ResetNode, reset: Reset, sim: Boolean, dft:Option[DFTResetSignals]): Unit = {
     if(!sim) {
