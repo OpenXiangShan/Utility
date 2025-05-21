@@ -65,7 +65,9 @@ trait HasTableUtils {
 
         val ranges = split_ui(ui.getWidth)
         val refPort = RefPort("data_" + prefix, ui.getWidth)
-        if (ranges.size == 1) {
+        if (ui.getWidth == 0) {
+          List()
+        } else if (ranges.size == 1) {
           List(Column(prefix, refPort, refPort.ref))
         } else {
           ranges.zipWithIndex
