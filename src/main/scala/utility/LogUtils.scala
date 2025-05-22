@@ -41,6 +41,7 @@ object XSLogLevel extends Enumeration {
   val INFO  = Value("INFO ")
   val PERF  = Value("PERF ")
   val WARN  = Value("WARN ")
+  val ASSERT = Value("ASSERT")
   val ERROR = Value("ERROR")
   val OFF   = Value("OFF  ")
 }
@@ -113,8 +114,6 @@ object XSLog {
     val enableDebug = logOpts.enableDebug && debugLevel != XSLogLevel.PERF
     val enablePerf = logOpts.enablePerf && debugLevel == XSLogLevel.PERF
     if (!logOpts.fpgaPlatform && (enableDebug || enablePerf || debugLevel == XSLogLevel.ERROR)) {
-      require(chisel3.XSCompatibility.currentWhen.isEmpty,
-        "XSLog to be collect not supported inside whenContext, use XSLog(cond, pable) instead")
       require(chisel3.XSCompatibility.currentModule.isDefined, "XSLog should be called inside a module")
       val curMod = curModOpt.getOrElse(chisel3.XSCompatibility.currentModule.get)
       if (!logModules.contains(curMod)) logModules += curMod
@@ -126,7 +125,12 @@ object XSLog {
           assert(false.B) //assert at current module for better error location
         }
       }
-      logInfos.addOne(LogPerfParam(debugLevel, prefix, cond, fmt, data, moduleTag))
+      if (debugLevel == XSLogLevel.ASSERT) {
+        assert(RegNext(cond)) //delay one cycle to wait the infomation printf
+        logInfos.addOne(LogPerfParam(debugLevel, prefix, !cond && chisel3.XSCompatibility.currentWhenCond, fmt, data, moduleTag))
+      } else {
+        logInfos.addOne(LogPerfParam(debugLevel, prefix, cond && chisel3.XSCompatibility.currentWhenCond, fmt, data, moduleTag))
+      }
     }
   }
 
@@ -186,6 +190,8 @@ object XSWarn extends LogHelper(XSLogLevel.WARN)
 
 object XSError extends LogHelper(XSLogLevel.ERROR)
 
+object XSAssert extends LogHelper(XSLogLevel.ASSERT)
+
 private class LogPerfEndpoint()(implicit p: Parameters) extends Module {
   val io = IO(Input(new LogPerfIO))
   def concatAndPrint(infos: Seq[LogPerfParam]): Unit = {
@@ -203,14 +209,14 @@ private class LogPerfEndpoint()(implicit p: Parameters) extends Module {
   // Group printfs with same cond to reduce system tasks for better thread schedule
   XSLog.tapInfos.groupBy(_.cond).values.foreach{ infos =>
     val cond = infos.head.cond
-    val errs = infos.filter(_.debugLevel == XSLogLevel.ERROR)
-    if (!errs.isEmpty) {
+    val errsOrAsserts = infos.filter(info => info.debugLevel == XSLogLevel.ERROR || info.debugLevel == XSLogLevel.ASSERT)
+    if (!errsOrAsserts.isEmpty) {
       when (cond) {
-        concatAndPrint(errs)
+        concatAndPrint(errsOrAsserts)
         // assert at local module for better error location
       }
     }
-    val logs = infos.filterNot(_.debugLevel == XSLogLevel.ERROR)
+    val logs = infos.filterNot(info => info.debugLevel == XSLogLevel.ERROR || info.debugLevel == XSLogLevel.ASSERT)
     if (!logs.isEmpty) {
       when(io.logEnable && cond) {
         concatAndPrint(logs)
