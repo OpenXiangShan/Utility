@@ -8,6 +8,6 @@ package chisel3 {
     def currentModule: Option[BaseModule] = Builder.currentModule
 
     // Return the internal implicit whenContext
-    def currentWhen: Option[WhenContext] = Builder.currentWhen
+    def currentWhen: Option[WhenContext] = Builder.whenStack.headOption
   }
 }
