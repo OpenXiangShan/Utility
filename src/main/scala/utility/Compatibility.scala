@@ -9,5 +9,6 @@ package chisel3 {
 
     // Return the internal implicit whenContext
     def currentWhen: Option[WhenContext] = Builder.whenStack.headOption
+    def currentWhenCond: Bool = if(!currentWhen.isEmpty) Builder.whenStack.head.localCond else true.B
   }
 }
