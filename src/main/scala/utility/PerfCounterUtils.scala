@@ -63,23 +63,24 @@ trait XSPerfTap {
 }
 
 object XSPerfAccumulate extends HasRegularPerfName with XSPerfTap {
-  private val perfInfos = ListBuffer.empty[(Option[BaseModule], String, UInt)]
-  def apply(perfName: String, perfCnt: UInt, perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE)
+  private val perfInfos = ListBuffer.empty[(Option[BaseModule], String, UInt, Bool)]
+  def apply(perfName: String, perfCnt: UInt, perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE, cntEn: Bool = true.B)
            (implicit p: Parameters): Unit = {
     judgeName(perfName)
     if (p(PerfCounterOptionsKey).enablePerfPrint && perfLevel >= p(PerfCounterOptionsKey).perfLevel) {
       if(perfInfos.isEmpty) XSLog.registerCaller(collect)
-      perfInfos += ((chisel3.XSCompatibility.currentModule, perfName, perfCnt))
+      perfInfos += ((chisel3.XSCompatibility.currentModule, perfName, perfCnt, cntEn))
     }
   }
   def collect(ctrl: LogPerfIO)(implicit p: Parameters): Unit = {
-    perfInfos.foreach{ case (curMod, perfName, perfCnt_bore) =>
+    perfInfos.foreach{ case (curMod, perfName, perfCnt_bore, cntEn_bore) =>
       val perfCnt = tapOrGet(perfCnt_bore)
+      val cntEn = tapOrGet(cntEn_bore)
       val perfClean = ctrl.clean
       val perfDump = ctrl.dump
       val counter = RegInit(0.U(64.W)).suggestName(perfName + "Counter")
       val next_counter = WireInit(0.U(64.W)).suggestName(perfName + "Next")
-      next_counter := counter + perfCnt
+      next_counter := counter + Mux(cntEn, perfCnt, 0.U)
       counter := Mux(perfClean, 0.U, next_counter)
 
       XSPerfPrint(curMod)(perfDump, p"$perfName, $next_counter\n")
