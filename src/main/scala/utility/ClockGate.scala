@@ -37,12 +37,16 @@ class ClockGate extends BlackBox with HasBlackBoxInline {
       |  input  wire CK,
       |  output wire Q
       |);
+      |`ifdef SYNTHESIS
+      |  assign Q = CK;
+      |`else
       |  reg EN;
       |  always_latch begin
       |    if(!CK) EN = TE | E;
       |  end
       |  assign Q = CK & EN;
       |endmodule
+      |`endif
       |
       |""".stripMargin
   setInline("ClockGate.sv", sverilog)
