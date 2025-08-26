@@ -56,13 +56,7 @@ trait HasRegularPerfName {
   }
 }
 
-trait XSPerfTap {
-  def tapOrGet[T <: Data](data: T): T ={
-    if (isVisible(data)) data else tapAndRead(data)
-  }
-}
-
-object XSPerfAccumulate extends HasRegularPerfName with XSPerfTap {
+object XSPerfAccumulate extends HasRegularPerfName with XSLogTap {
   private val perfInfos = ListBuffer.empty[(Option[BaseModule], String, UInt)]
   def apply(perfName: String, perfCnt: UInt, perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE)
            (implicit p: Parameters): Unit = {
@@ -73,7 +67,7 @@ object XSPerfAccumulate extends HasRegularPerfName with XSPerfTap {
     }
   }
   def collect(ctrl: LogPerfIO)(implicit p: Parameters): Unit = {
-    perfInfos.foreach{ case (curMod, perfName, perfCnt_bore) =>
+    perfInfos.foreach { case (curMod, perfName, perfCnt_bore) =>
       val perfCnt = tapOrGet(perfCnt_bore)
       val perfClean = ctrl.clean
       val perfDump = ctrl.dump
@@ -87,7 +81,7 @@ object XSPerfAccumulate extends HasRegularPerfName with XSPerfTap {
   }
 }
 
-object XSPerfHistogram extends HasRegularPerfName with XSPerfTap {
+object XSPerfHistogram extends HasRegularPerfName with XSLogTap {
   // instead of simply accumulating counters
   // this function draws a histogram
   private val perfHistInfos = ListBuffer.empty[(Option[BaseModule], String, UInt, Bool, Int, Int, Int, Boolean, Boolean)]
@@ -180,7 +174,7 @@ object XSPerfHistogram extends HasRegularPerfName with XSPerfTap {
   }
 }
 
-object XSPerfMax extends HasRegularPerfName with XSPerfTap {
+object XSPerfMax extends HasRegularPerfName with XSLogTap {
   private val perfMaxInfos = ListBuffer.empty[(Option[BaseModule], String, UInt, Bool)]
   def apply(perfName: String, perfCnt: UInt, enable: Bool, perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE)
            (implicit p: Parameters): Unit = {

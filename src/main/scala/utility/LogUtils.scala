@@ -18,7 +18,7 @@ package utility
 
 import chisel3._
 import chisel3.reflect.DataMirror.isVisible
-import chisel3.util.experimental.BoringUtils.tapAndRead
+import chisel3.util.experimental.BoringUtils.{bore, tapAndRead}
 import chisel3.experimental.BaseModule
 import org.chipsalliance.cde.config.{Field, Parameters}
 import XSLogLevel.XSLogLevel
@@ -30,7 +30,8 @@ case class LogUtilsOptions
 (
   enableDebug: Boolean,
   enablePerf: Boolean,
-  fpgaPlatform: Boolean
+  fpgaPlatform: Boolean,
+  enableXMR: Boolean = true
 )
 
 object XSLogLevel extends Enumeration {
@@ -62,7 +63,18 @@ class LogPerfIO extends Bundle {
   val dump = Bool()
 }
 
-object XSLog {
+private[utility] trait XSLogTap {
+  def tapOrGet[T <: Data](data: T)(implicit p: Parameters): T = {
+    if (isVisible(data))
+      data
+    else if (p(LogUtilsOptionsKey).enableXMR)
+      tapAndRead(data)
+    else
+      bore(data)
+  }
+}
+
+object XSLog extends XSLogTap {
   private val logInfos = ListBuffer.empty[LogPerfParam]
   private val callBacks = ListBuffer.empty[(LogPerfIO) => Unit]
   private val logModules = ListBuffer.empty[BaseModule]
@@ -92,15 +104,11 @@ object XSLog {
   }
 
   // Access source Data in or not in current Module, called in LogPerfEndpoint to wrap boring wires
-  def tapInfos: Seq[LogPerfParam] = {
-    def tapOrGet[T <: Data](data: T): T = {
-      if (isVisible(data)) data else tapAndRead(data)
-    }
-
+  def tapInfos(implicit p: Parameters): Seq[LogPerfParam] = {
     logInfos.toSeq.map { info =>
       info.copy(
         cond = tapOrGet(info.cond),
-        data = info.data.map(d => tapOrGet(d))
+        data = info.data.map(tapOrGet _)
       )
     }
   }
@@ -201,7 +209,7 @@ private class LogPerfEndpoint()(implicit p: Parameters) extends Module {
   // To collect deferred call from XSPerf/..., invoke all registered caller
   XSLog.invokeCaller(io)
   // Group printfs with same cond to reduce system tasks for better thread schedule
-  XSLog.tapInfos.groupBy(_.cond).values.foreach{ infos =>
+  XSLog.tapInfos.groupBy(_.cond).values.foreach { infos =>
     val cond = infos.head.cond
     val errs = infos.filter(_.debugLevel == XSLogLevel.ERROR)
     if (!errs.isEmpty) {
