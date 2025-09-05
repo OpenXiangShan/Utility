@@ -139,13 +139,14 @@ class SRAMTemplate[T <: Data](
   gen: T, set: Int, way: Int = 1, singlePort: Boolean = false,
   shouldReset: Boolean = false, extraReset: Boolean = false,
   holdRead: Boolean = false, bypassWrite: Boolean = false,
-  useBitmask: Boolean = false,
+  useBitmask: Boolean = false, dummy: Boolean = false,
 ) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
     val w = Flipped(new SRAMWriteBus(gen, set, way, useBitmask))
   })
   val extra_reset = if (extraReset) Some(IO(Input(Bool()))) else None
+if (!dummy) {
 
   val wordType = UInt(gen.getWidth.W)
   val arrayWidth = if (useBitmask) 1 else gen.getWidth
@@ -221,6 +222,11 @@ class SRAMTemplate[T <: Data](
   io.r.resp.data := VecInit(rdata)
   io.r.req.ready := !resetState && (if (singlePort) !wen else true.B)
   io.w.req.ready := true.B
+} else {
+  io.r.resp.data := DontCare
+  io.r.req.ready := (if (singlePort) !io.w.req.valid else true.B)
+  io.w.req.ready := true.B
+}
 
 }
 
@@ -229,6 +235,7 @@ class FoldedSRAMTemplate[T <: Data](
   shouldReset: Boolean = false, extraReset: Boolean = false,
   holdRead: Boolean = false, singlePort: Boolean = false,
   bypassWrite: Boolean = false, useBitmask: Boolean = false,
+  dummy: Boolean = false,
 ) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
@@ -246,7 +253,8 @@ class FoldedSRAMTemplate[T <: Data](
 
   val array = Module(new SRAMTemplate(gen, set=nRows, way=width*way,
     shouldReset=shouldReset, extraReset=extraReset, holdRead=holdRead,
-    singlePort=singlePort, bypassWrite=bypassWrite, useBitmask=useBitmask))
+    singlePort=singlePort, bypassWrite=bypassWrite, useBitmask=useBitmask,
+    dummy = dummy))
   if (array.extra_reset.isDefined) {
     array.extra_reset.get := extra_reset.get
   }
@@ -287,13 +295,13 @@ class FoldedSRAMTemplate[T <: Data](
   }
 }
 class SRAMTemplateWithArbiter[T <: Data](nRead: Int, gen: T, set: Int, way: Int = 1,
-  shouldReset: Boolean = false) extends Module {
+  shouldReset: Boolean = false, dummy: Boolean = false) extends Module {
   val io = IO(new Bundle {
     val r = Flipped(Vec(nRead, new SRAMReadBus(gen, set, way)))
     val w = Flipped(new SRAMWriteBus(gen, set, way))
   })
 
-  val ram = Module(new SRAMTemplate(gen, set, way, shouldReset = shouldReset, holdRead = false, singlePort = true))
+  val ram = Module(new SRAMTemplate(gen, set, way, shouldReset = shouldReset, holdRead = false, singlePort = true, dummy = dummy))
   ram.io.w <> io.w
 
   val readArb = Module(new Arbiter(chiselTypeOf(io.r(0).req.bits), nRead))
