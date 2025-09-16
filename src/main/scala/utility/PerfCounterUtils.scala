@@ -47,7 +47,7 @@ trait HasRegularPerfName {
   def judgeName(perfName: String): Unit = {
     val regular = """(\w+)""".r
     perfName match {
-      case regular(_) => true
+      case regular(_) =>
       case _ => {
         println("PerfName " + perfName + " is not '\\w+' regular")
         require(false)
