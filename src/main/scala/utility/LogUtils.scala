@@ -90,12 +90,10 @@ object XSLog extends XSLogTap {
       }
       case y: FirrtlFormat => {
         data += WireInit(y.bits)
-        y match {
-          case Decimal(d) => fmt += "%d"
-          case Hexadecimal(x) => fmt += "%x"
-          case Binary(b) => fmt += "%b"
-          case Character(c) => fmt += "%c"
-        }
+        if      (y.isInstanceOf[Decimal])     fmt += "%d"
+        else if (y.isInstanceOf[Hexadecimal]) fmt += "%x"
+        else if (y.isInstanceOf[Binary])      fmt += "%b"
+        else if (y.isInstanceOf[Character])   fmt += "%c"
       }
       case PString(str) => fmt += str
       case other => throw new IllegalArgumentException("XSLog not support unpack: " + other.toString)
