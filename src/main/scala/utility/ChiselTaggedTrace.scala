@@ -14,13 +14,13 @@
 ***************************************************************************************/
 
 package utility
+
 import chisel3._
 import chisel3.experimental.StringParam
 import chisel3.util._
 import freechips.rocketchip.util.DataToAugmentedData
 import java.lang
 import freechips.rocketchip.amba.ahb.AHBImpMaster.bundle
-
 
 trait HasDPICUtils extends BlackBox with HasBlackBoxInline {
   var moduleName: String = ""
@@ -44,7 +44,6 @@ trait HasDPICUtils extends BlackBox with HasBlackBoxInline {
     val assign = if (comb_output) "=" else "<="
     val clock = if (comb_output) "*" else ((if (negedge) "negedge" else "posedge") + " clock")
 
-    //field(0)._2
     if (ports_input.contains(List("clock", "reset", "en"))) {
       throw new Exception
     }
@@ -147,7 +146,7 @@ class CommitInstMeta extends HasDPICUtils {
   init(io)
 }
 
-object PerfCCT {
+object TaggedTrace {
   object InstPos extends Enumeration {
     val AtFetch = Value("AtFetch")
     val AtDecode = Value("AtDecode")
@@ -244,10 +243,31 @@ object PerfCCT {
        |#include <cerrno>
        |#include <unistd.h>
        |#include <sqlite3.h>
+       |#include <vector>
        |
        |enum InstPos {
        |  ${InstPos.values.mkString("", ",\n  ", "")}
        |};
+       |
+       |
+       |struct InstMeta
+       |{
+       |  uint64_t sn;
+       |  uint64_t pc;
+       |  uint64_t instcode;
+       |  std::vector<uint64_t> posTick;
+       |
+       |  void reset(uint64_t sn, uint64_t pc, uint64_t instcode) {
+       |    this->sn = sn;
+       |    this->pc = pc;
+       |    this->instcode = instcode;
+       |    posTick.clear();
+       |    posTick.resize(${InstPos.AtCommit.id} + 1, 0);
+       |  }
+       |};
+       |
+       |// export to xspdb
+       |extern std::vector<InstMeta*> lastCommittedInsts;
        |
        |#endif
        """.stripMargin
@@ -260,7 +280,6 @@ object PerfCCT {
        |#include "perfCCT.h"
        |#include "chisel_db.h"
        |#include <string>
-       |#include <vector>
        |#include <sstream>
        |#include <mutex>
        |
@@ -275,23 +294,7 @@ object PerfCCT {
        |bool enable_dump_lifetime = false;
        |uint64_t global_tick_acc = 0;
        |
-       |class InstMeta
-       |{
-       |  friend class PerfCCT;
-       |  uint64_t sn;
-       |  uint64_t pc;
-       |  uint64_t instcode;
-       |  std::vector<uint64_t> posTick;
-       |
-       |public:
-       |  void reset(uint64_t sn, uint64_t pc, uint64_t instcode) {
-       |    this->sn = sn;
-       |    this->pc = pc;
-       |    this->instcode = instcode;
-       |    posTick.clear();
-       |    posTick.resize(${InstPos.AtCommit.id} + 1, 0);
-       |  }
-       |};
+       |std::vector<InstMeta*> lastCommittedInsts;
        |
        |class PerfCCT
        |{
@@ -319,7 +322,6 @@ object PerfCCT {
        |#if ${enableCCT.toString()}
        |    metas.resize(MaxMetas);
        |    invalidMeta.reset(0, 0, 0);
-       |    commitOrderQ.resize(10);// size must lager than commitwidth
        |
        |    ss << "INSERT INTO LifeTimeCommitTrace(";
        |    ss << ${InstPos.values.mkString("\"", ",", ",")}${InstRecord.values.mkString("", ",", "\"")};
@@ -353,6 +355,7 @@ object PerfCCT {
        |      // update last_max_sn
        |      last_max_sn = sn_acc + 1;
        |
+       |      lastCommittedInsts.clear();
        |      // dump last commmitted insts
        |      for (auto& it : commitOrderQ) {
        |        for (auto meta:it) {
@@ -376,6 +379,7 @@ object PerfCCT {
        |            exit(1);
        |          }
        |          ss.str(std::string());
+       |          lastCommittedInsts.push_back(meta);
        |        }
        |        it.clear();
        |      }
@@ -421,6 +425,11 @@ object PerfCCT {
        |#if ${enableCCT.toString()}
        |    if (!enable_dump_lifetime) [[likely]] return;
        |    commitLock.lock();
+       |
+       |    // dynamic resize
+       |    if (order_id >= commitOrderQ.size()) {
+       |      commitOrderQ.resize(order_id + 1);
+       |    }
        |
        |    for (int i=0;i<block_size;i++) {
        |      auto meta = getMeta(sn + i);
@@ -483,8 +492,7 @@ object PerfCCT {
   }
 
   def addToFileRegisters {
-    FileRegisters.add("perfCCT.h", PerfCCT.getCHeader)
-    FileRegisters.add("perfCCT.cpp", PerfCCT.getCpp)
+    FileRegisters.add("perfCCT.h", getCHeader)
+    FileRegisters.add("perfCCT.cpp", getCpp)
   }
 }
-

@@ -13,4 +13,6 @@ package object utility {
   type SRAMReadBus[T <: Data] = _root_.utility.sram.SRAMReadBus[T]
   @deprecated
   type SRAMWriteBus[T <: Data] = _root_.utility.sram.SRAMWriteBus[T]
+
+  val PerfCCT = utility.TaggedTrace
 }
