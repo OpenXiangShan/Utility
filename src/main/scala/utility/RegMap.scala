@@ -177,7 +177,7 @@ object ConditionalRegMap {
    *       rmask = Fill(32, true.B),
    *       rfn = (x => x - 1.U)
    *     ),
-   *     ConditionalRegMapEntry(cond2, regD,)
+   *     ConditionalRegMapEntry(cond2, regD)
    *   )
    * )
    * 
