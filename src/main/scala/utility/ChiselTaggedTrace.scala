@@ -117,6 +117,7 @@ class UpdateInstPos extends HasDPICUtils {
     val reset = Input(Reset())
     val en = Input(Bool())
     val sn = Input(UInt(64.W))
+    val uopIdx = Input(UInt(64.W))
     val pos = Input(UInt(64.W))
   })
   init(io)
@@ -128,6 +129,7 @@ class UpdateInstMeta extends HasDPICUtils {
     val reset = Input(Reset())
     val en = Input(Bool())
     val sn = Input(UInt(64.W))
+    val uopIdx = Input(UInt(64.W))
     val meta = Input(UInt(64.W))
     val data = Input(UInt(64.W))
   })
@@ -195,27 +197,37 @@ object TaggedTrace {
     return 0.U
   }
 
-  def updateInstPos(sn: UInt, pos: UInt, en: Bool, clock: Clock, reset: Reset) {
+  def updateInstPos(sn: UInt, uopIdx: UInt, pos: UInt, en: Bool, clock: Clock, reset: Reset) {
     if (enableCCT) {
       val m = Module(new UpdateInstPos)
       m.io.clock := clock
       m.io.reset := reset
       m.io.en := en
       m.io.sn := sn
+      m.io.uopIdx := uopIdx
       m.io.pos := pos
     }
   }
 
-  def updateInstMeta(sn: UInt, meta: UInt, data: UInt, en: Bool, clock: Clock, reset: Reset) {
+  def updateInstPos(sn: UInt, pos: UInt, en: Bool, clock: Clock, reset: Reset) {
+    updateInstPos(sn, 0.U, pos, en, clock, reset)
+  }
+
+  def updateInstMeta(sn: UInt, uopIdx: UInt, meta: UInt, data: UInt, en: Bool, clock: Clock, reset: Reset) {
     if (enableCCT) {
       val m = Module(new UpdateInstMeta)
       m.io.clock := clock
       m.io.reset := reset
       m.io.en := en
       m.io.sn := sn
+      m.io.uopIdx := uopIdx
       m.io.meta := meta
       m.io.data := data
     }
+  }
+
+  def updateInstMeta(sn: UInt, meta: UInt, data: UInt, en: Bool, clock: Clock, reset: Reset) {
+    updateInstMeta(sn, 0.U, meta, data, en, clock, reset)
   }
 
   def commitInstMeta(order_id: UInt, sn: UInt, block_size: UInt, en: Bool, clock: Clock, reset: Reset) {
@@ -244,6 +256,8 @@ object TaggedTrace {
        |#include <unistd.h>
        |#include <sqlite3.h>
        |#include <vector>
+       |#include <mutex>
+       |#include <map>
        |
        |enum InstPos {
        |  ${InstPos.values.mkString("", ",\n  ", "")}
@@ -255,14 +269,39 @@ object TaggedTrace {
        |  uint64_t sn;
        |  uint64_t pc;
        |  uint64_t instcode;
-       |  std::vector<uint64_t> posTick;
+       |  std::vector< std::vector<uint64_t> > uopTick;
+       |  std::mutex uopTickLock;
        |
        |  void reset(uint64_t sn, uint64_t pc, uint64_t instcode) {
+       |    std::lock_guard<std::mutex> guard(uopTickLock);
        |    this->sn = sn;
        |    this->pc = pc;
        |    this->instcode = instcode;
-       |    posTick.clear();
-       |    posTick.resize(${InstPos.AtCommit.id} + 1, 0);
+       |    uopTick.clear();
+       |  }
+       |
+       |  void updateUopTick(uint64_t uopIdx, const InstPos pos, uint64_t tick) {
+       |    std::lock_guard<std::mutex> guard(uopTickLock);
+       |    if (uopTick.size() <= uopIdx) {
+       |      size_t old_size = uopTick.size();
+       |      for (size_t i = old_size; i <= uopIdx; i++) {
+       |        uopTick.push_back(std::vector<uint64_t>());
+       |        uopTick.back().resize(AtCommit + 1, 0);
+       |        // uop shares same fetch and decode time
+       |        if (uopIdx > 0) {
+       |          uopTick.back().at(AtFetch) = uopTick[0].at(AtFetch);
+       |          uopTick.back().at(AtDecode) = uopTick[0].at(AtDecode);
+       |        }
+       |      }
+       |    }
+       |    if (pos == AtCommit) {
+       |      // each uop commits at the same time
+       |      for (auto& it : uopTick)
+       |        it.at(AtCommit) = tick;
+       |    } else {
+       |      if (!uopTick[uopIdx].at(pos))
+       |        uopTick[uopIdx].at(pos) = tick;
+       |    }
        |  }
        |};
        |
@@ -281,7 +320,6 @@ object TaggedTrace {
        |#include "chisel_db.h"
        |#include <string>
        |#include <sstream>
-       |#include <mutex>
        |
        |extern sqlite3 *mem_db;
        |extern char *zErrMsg;
@@ -298,32 +336,33 @@ object TaggedTrace {
        |
        |class PerfCCT
        |{
-       |  const int MaxMetas = 3000;
        |  uint64_t cur_tick = 0;
        |  uint64_t sn_acc = 10;
        |  uint64_t last_max_sn = sn_acc;
+       |  uint64_t commitSN = 0;
+       |  uint64_t last_commitSN = 0;
        |
-       |  std::vector<InstMeta> metas;
-       |  InstMeta invalidMeta;
-       |  std::vector<std::vector<InstMeta*>> commitOrderQ;
+       |  std::map <int, InstMeta> metas;
+       |  // never replace with unordered_map, we need ordered RB-Tree
        |  std::string sql_insert_cmd;
        |
-       |  std::mutex createLock;
-       |  std::mutex commitLock;
+       |  std::mutex commitLock; // guard commitSN
+       |  std::mutex metaLock;   // guard metas
        |  std::stringstream ss;
        |
-       |  InstMeta* getMeta(uint64_t sn) {
-       |    if (sn == 0) [[unlikely]] return &invalidMeta;
-       |    return &metas[sn%MaxMetas];
+       |  std::map<int, InstMeta>::iterator getMeta(uint64_t sn) {
+       |    if (sn == 0) [[unlikely]] return metas.end();
+       |    else {
+       |      std::lock_guard<std::mutex> guardMeta(metaLock);
+       |      metas[sn];
+       |      return metas.find(sn);
+       |    }
        |  }
        |
        |public:
        |  PerfCCT() {
        |#if ${enableCCT.toString()}
-       |    metas.resize(MaxMetas);
-       |    invalidMeta.reset(0, 0, 0);
-       |
-       |    ss << "INSERT INTO LifeTimeCommitTrace(";
+       |    ss << "INSERT INTO LifeTimeCommitTrace(SN,UopIdx,";
        |    ss << ${InstPos.values.mkString("\"", ",", ",")}${InstRecord.values.mkString("", ",", "\"")};
        |    ss << ") VALUES (";
        |    sql_insert_cmd = ss.str();
@@ -332,7 +371,9 @@ object TaggedTrace {
        |    const char* createTable=
        |    "CREATE TABLE LifeTimeCommitTrace( \\
        |    ID INTEGER PRIMARY KEY AUTOINCREMENT, \\
-       |    ${InstPos.values.mkString("", " INT NOT NULL, \\\n      ", " INT NOT NULL, \\")}
+       |    SN INTEGER NOT NULL, \\
+       |    UopIdx INT NOT NULL, \\
+       |    ${InstPos.values.mkString("", " INT NOT NULL, \\\n    ", " INT NOT NULL, \\")}
        |    DisAsm INT NOT NULL, \\
        |    PC INT NOT NULL \\
        |    );";
@@ -351,26 +392,31 @@ object TaggedTrace {
        |    if (!enable_dump_lifetime) [[likely]] return;
        |    // negedge trigger
        |    if (cur_tick != global_tick_acc) {
-       |		  cur_tick = global_tick_acc;
+       |      cur_tick = global_tick_acc;
        |      // update last_max_sn
        |      last_max_sn = sn_acc + 1;
        |
+       |      std::lock_guard<std::mutex> guardMeta(metaLock);
+       |      std::lock_guard<std::mutex> guardCommit(commitLock);
+       |      // clear old insts from last cycle
        |      lastCommittedInsts.clear();
+       |      for (auto it = metas.begin(); it != metas.end() && it->first <= last_commitSN; it = metas.erase(it));
        |      // dump last commmitted insts
-       |      for (auto& it : commitOrderQ) {
-       |        for (auto meta:it) {
-       |          if (meta == &invalidMeta) [[unlikely]] continue;
+       |      for (auto it = metas.begin(); it != metas.end() && it->first <= commitSN; it++) {
+       |        for (size_t uopidx = 0; uopidx < it->second.uopTick.size(); uopidx++) {
        |          ss << sql_insert_cmd;
-       |          ss << meta->posTick[0];
-       |          for (auto it = meta->posTick.begin() + 1; it != meta->posTick.end(); it++) {
-       |              ss << "," << *it;
+       |          ss << it->second.sn << "," << uopidx;
+       |          for (auto pos_it = it->second.uopTick[uopidx].begin();
+       |               pos_it != it->second.uopTick[uopidx].end();
+       |               pos_it++) {
+       |              ss << "," << *pos_it;
        |          }
-       |          ss << "," << meta->instcode;
+       |          ss << "," << it->second.instcode;
        |          // pc is unsigned, but sqlite3 only supports signed integer [-2^63, 2^63-1]
        |          // if real pc > 2^63-1, it will be stored as negative number 
        |          // (negtive pc = real pc - 2^64)
        |          // when read a negtive pc, real pc = negtive pc + 2^64
-       |          ss << "," << int64_t(meta->pc); 
+       |          ss << "," << int64_t(it->second.pc); 
        |          ss << ");";
        |
        |          rc = sqlite3_exec(mem_db, ss.str().c_str(), callback_temp, 0, &zErrMsg);
@@ -379,10 +425,11 @@ object TaggedTrace {
        |            exit(1);
        |          }
        |          ss.str(std::string());
-       |          lastCommittedInsts.push_back(meta);
        |        }
-       |        it.clear();
+       |        if (it->second.uopTick[0].at(AtCommit) != 0)
+       |          lastCommittedInsts.push_back(&(it->second));
        |      }
+       |      last_commitSN = commitSN;
        |    }
        |#endif
        |  }
@@ -390,31 +437,30 @@ object TaggedTrace {
        |  uint64_t createInstMeta(uint64_t order_id, uint64_t pc, uint64_t instcode) {
        |#if ${enableCCT.toString()}
        |    if (!enable_dump_lifetime) [[likely]] return 0;
-       |    createLock.lock();
        |
        |    uint64_t sn = last_max_sn + order_id;
        |    sn_acc = std::max(sn_acc, sn);
-       |    auto old = getMeta(sn);
-       |    old->reset(sn, pc, instcode);
-       |    old->posTick.at(AtFetch) = global_tick_acc;
+       |    auto meta = getMeta(sn);
+       |    meta->second.reset(sn, pc, instcode);
+       |    meta->second.updateUopTick(0, AtFetch, global_tick_acc);
        |
-       |    createLock.unlock();
        |    return sn;
        |#endif
        |    return 0;
        |  }
        |
-       |  void updateInstPos(uint64_t sn, const InstPos pos) {
+       |  void updateInstPos(uint64_t sn, uint64_t uopIdx, const InstPos pos) {
        |#if ${enableCCT.toString()}
        |    if (!enable_dump_lifetime) [[likely]] return;
        |
        |    auto meta = getMeta(sn);
-       |    meta->posTick.at(pos) = global_tick_acc;
+       |    if (meta == metas.end()) [[unlikely]] return;
+       |    meta->second.updateUopTick(uopIdx, pos, global_tick_acc);
        |#endif
        |  }
        |
        |  // interface example
-       |  void updateInstMeta(uint64_t, uint64_t, uint64_t) {
+       |  void updateInstMeta(uint64_t, uint64_t, uint64_t, uint64_t) {
        |#if ${enableCCT.toString()}
        |    if (!enable_dump_lifetime) [[likely]] return;
        |    // do somthing
@@ -423,21 +469,14 @@ object TaggedTrace {
        |
        |  void commitMeta(uint64_t order_id, uint64_t sn, uint64_t block_size) {
        |#if ${enableCCT.toString()}
-       |    if (!enable_dump_lifetime) [[likely]] return;
-       |    commitLock.lock();
-       |
-       |    // dynamic resize
-       |    if (order_id >= commitOrderQ.size()) {
-       |      commitOrderQ.resize(order_id + 1);
-       |    }
+       |    if (sn == 0) [[unlikely]] return;
        |
        |    for (int i=0;i<block_size;i++) {
        |      auto meta = getMeta(sn + i);
-       |      meta->posTick.at(AtCommit) = global_tick_acc;
-       |      commitOrderQ[order_id].push_back(meta);
+       |      meta->second.updateUopTick(0, AtCommit, global_tick_acc);
        |    }
-       |
-       |    commitLock.unlock();
+       |    std::lock_guard<std::mutex> guardCommit(commitLock);
+       |    commitSN = std::max(commitSN, sn + block_size - 1);
        |#endif
        |  }
        |}*perfCCT;
@@ -476,12 +515,12 @@ object TaggedTrace {
        |    return perfCCT->createInstMeta(order_id, pc, instcode);
        |  }
        |
-       |  void updateInstPos(uint64_t sn, const InstPos pos) {
-       |    perfCCT->updateInstPos(sn, pos);
+       |  void updateInstPos(uint64_t sn, uint64_t uopIdx, const InstPos pos) {
+       |    perfCCT->updateInstPos(sn, uopIdx, pos);
        |  }
        |
-       |  void updateInstMeta(uint64_t sn, uint64_t meta, uint64_t data) {
-       |    perfCCT->updateInstMeta(sn, meta, data);
+       |  void updateInstMeta(uint64_t sn, uint64_t uopIdx, uint64_t meta, uint64_t data) {
+       |    perfCCT->updateInstMeta(sn, uopIdx, meta, data);
        |  }
        |
        |  void commitInstMeta(uint64_t order_id, uint64_t sn, uint64_t block_size) {
