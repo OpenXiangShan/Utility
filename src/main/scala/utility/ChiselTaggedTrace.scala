@@ -88,6 +88,15 @@ trait HasDPICUtils extends BlackBox with HasBlackBoxInline {
   override def desiredName: String = moduleName
 }
 
+class InstSeqNum extends Bundle {
+  val seqNum = UInt(56.W)
+  val uopIdx = UInt(8.W)
+}
+
+object InstSeqNum {
+  def apply() = new InstSeqNum
+}
+
 class GlobalSimNegedge extends HasDPICUtils {
   // only can be instantiated once
   val io = IO(new Bundle() {
@@ -197,37 +206,43 @@ object TaggedTrace {
     return 0.U
   }
 
-  def updateInstPos(sn: UInt, uopIdx: UInt, pos: UInt, en: Bool, clock: Clock, reset: Reset) {
+  def updateInstPos(seq: InstSeqNum, pos: UInt, en: Bool, clock: Clock, reset: Reset) {
     if (enableCCT) {
       val m = Module(new UpdateInstPos)
       m.io.clock := clock
       m.io.reset := reset
       m.io.en := en
-      m.io.sn := sn
-      m.io.uopIdx := uopIdx
+      m.io.sn := seq.seqNum
+      m.io.uopIdx := seq.uopIdx
       m.io.pos := pos
     }
   }
 
   def updateInstPos(sn: UInt, pos: UInt, en: Bool, clock: Clock, reset: Reset) {
-    updateInstPos(sn, 0.U, pos, en, clock, reset)
+    val seq = InstSeqNum()
+    seq.seqNum := sn
+    seq.uopIdx := 0.U
+    updateInstPos(seq, pos, en, clock, reset)
   }
 
-  def updateInstMeta(sn: UInt, uopIdx: UInt, meta: UInt, data: UInt, en: Bool, clock: Clock, reset: Reset) {
+  def updateInstMeta(seq: InstSeqNum, meta: UInt, data: UInt, en: Bool, clock: Clock, reset: Reset) {
     if (enableCCT) {
       val m = Module(new UpdateInstMeta)
       m.io.clock := clock
       m.io.reset := reset
       m.io.en := en
-      m.io.sn := sn
-      m.io.uopIdx := uopIdx
+      m.io.sn := seq.seqNum
+      m.io.uopIdx := seq.uopIdx
       m.io.meta := meta
       m.io.data := data
     }
   }
 
   def updateInstMeta(sn: UInt, meta: UInt, data: UInt, en: Bool, clock: Clock, reset: Reset) {
-    updateInstMeta(sn, 0.U, meta, data, en, clock, reset)
+    val seq = InstSeqNum()
+    seq.seqNum := sn
+    seq.uopIdx := 0.U
+    updateInstMeta(seq, meta, data, en, clock, reset)
   }
 
   def commitInstMeta(order_id: UInt, sn: UInt, block_size: UInt, en: Bool, clock: Clock, reset: Reset) {
