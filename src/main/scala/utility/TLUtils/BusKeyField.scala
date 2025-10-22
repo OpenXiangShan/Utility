@@ -37,13 +37,26 @@ object MemReqSource extends Enumeration {
   val Prefetch2L2Stream = Value("Prefetch2L2Stream")
   val Prefetch2L2Stride = Value("Prefetch2L2Stride")
   val Prefetch2L2TP = Value("Prefetch2L2TP")
+  val Prefetch2L2Berti = Value("Prefetch2L2Berti")
   val Prefetch2L2Unknown = Value("Prefetch2L2Unknown")
   val Prefetch2L3Stream = Value("Prefetch2L3Stream")
   val Prefetch2L3Stride = Value("Prefetch2L3Stride")
+  val Prefetch2L3Berti = Value("Prefetch2L3Berti")
   val Prefetch2L3Unknown = Value("Prefetch2L3Unknown")
   val ReqSourceCount = Value("ReqSourceCount")
 
   val reqSourceBits = log2Ceil(ReqSourceCount.id)
+
+  def isL2Prefetch(reqSource: UInt): Bool = {
+    reqSource === Prefetch2L2BOP.id.U ||
+    reqSource === Prefetch2L2PBOP.id.U ||
+    reqSource === Prefetch2L2SMS.id.U ||
+    reqSource === Prefetch2L2Stream.id.U ||
+    reqSource === Prefetch2L2Stride.id.U ||
+    reqSource === Prefetch2L2TP.id.U ||
+    reqSource === Prefetch2L2Berti.id.U ||
+    reqSource === Prefetch2L2Unknown.id.U
+  }
 }
 
 // Used to indicate the source of the req (L1I/L1D/PTW)
