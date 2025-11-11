@@ -29,7 +29,7 @@ trait HasMyMapUtils extends HasTableUtils {
 
 // TODO: change Record to Data?
 class MyMap[T <: Data, U <: Data](
-  val envInFPGA: Boolean,
+  val enable: Boolean,
   val mapName: String,
   val keyHw: Vec[T],
   val valueHw: Vec[U]
@@ -129,8 +129,8 @@ class MyMap[T <: Data, U <: Data](
          |}
          |""".stripMargin
 
-    if (envInFPGA) insert_dummy
-    else insert
+    if (enable) insert
+    else insert_dummy
   }
 
   def get_print: String = {
@@ -152,8 +152,8 @@ class MyMap[T <: Data, U <: Data](
          |extern "C" void print_${cmap_name}() {}
          |""".stripMargin
 
-    if (envInFPGA) print_map_dummy
-    else print_map
+    if (enable) print_map
+    else print_map_dummy
   }
 
   def get_save_file: String = {
@@ -198,12 +198,12 @@ class MyMap[T <: Data, U <: Data](
          |
          |}
          |""".stripMargin
-    if (envInFPGA) dummy
-    else save_to_file
+    if (enable) save_to_file
+    else dummy
   }
 
   def log(key: Vec[T], value: Vec[U], en: Vec[Bool], site: String = "", clock: Clock, reset: Reset): Unit = {
-    if(!envInFPGA){
+    if(enable){
       val writer = Module(new MyMapWriteHelper(mapName, keyHw, valueHw, site))
       writer.io.clock := clock
       writer.io.reset := reset
@@ -309,42 +309,21 @@ object ChiselMap {
   private var enable = false
 
   def init(enable: Boolean): Unit = {
-    // Not needed at the moment
     this.enable = enable
   }
 
-  def createTableBase[T <: Data, U <: Data](mapName: String, keyHw: Vec[T], valueHw: Vec[U], basicDB: Boolean = this.enable): MyMap[T, U] = {
+  def createTableBase[T <: Data, U <: Data](mapName: String, keyHw: Vec[T], valueHw: Vec[U]): MyMap[T, U] = {
     getTable(mapName, keyHw, valueHw)
       .getOrElse({
-        val t = new MyMap[T, U](!basicDB, mapName, keyHw, valueHw)
+        val t = new MyMap[T, U](this.enable, mapName, keyHw, valueHw)
         table_map += (mapName -> t)
         t
       })
   }
 
-  // def createTableWidth[T <: Data, U <: Data](mapName: String, keyHw: T, valueHw: U, width: Integer, basicDB: Boolean = this.enable): MyMap[T, U] = {
-  //   val key = Wire(Vec(width, new chiselTypeOf(keyHw)))
-  //   val value = Wire(Vec(width, new chiselTypeOf(valueHw)))
-  //   createTableBase(mapName, key, value, basicDB)
-  // }
-
-  def createTable[T <: Data](mapName: String, keyHw: Vec[T], basicDB: Boolean = this.enable): MyMap[T, UInt] = {
-    createTableBase(mapName, keyHw, Vec(keyHw.size, UInt(64.W)), this.enable)
+  def createTable[T <: Data](mapName: String, keyHw: Vec[T]): MyMap[T, UInt] = {
+    createTableBase(mapName, keyHw, Vec(keyHw.size, UInt(64.W)))
   }
-
-  // TODO: fix syntax bug of overloaded method
-  // def createTable[T <: Data](mapName: String, keyHw: T, basicDB: Boolean = this.enable) = {
-  //   val valueVec = Wire(Vec(1, new DummyCntBundle))
-  //   valueVec.map(_ := 1.U)
-  //   keyHw match {
-  //     case vec: Vec[_] =>
-  //       createTable(mapName, vec, valueVec, basicDB)
-  //     case _ =>
-  //       val keyVec = Wire(Vec(1, chiselTypeOf(keyHw)))
-  //       keyVec.head := keyHw
-  //       createTable(mapName, keyVec, valueVec, basicDB)
-  //   }
-  // }
 
   def getTable(mapName: String): Option[MyMap[_, _]] = {
     table_map.get(mapName)

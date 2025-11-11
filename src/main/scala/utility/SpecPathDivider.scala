@@ -215,7 +215,7 @@ object ChiselMapWithSpecDivide {
       enOut(i) := divider.io.out(i).valid
     }
 
-    val chiselmap = ChiselMap.createTableBase(tableName, chiselTypeOf(keyOut), chiselTypeOf(valueOut), basicDB = basicDB)
+    val chiselmap = ChiselMap.createTableBase(tableName, chiselTypeOf(keyOut), chiselTypeOf(valueOut))
     chiselmap.log(keyOut, valueOut, enOut, siteName, clock, reset)
   }
 }
