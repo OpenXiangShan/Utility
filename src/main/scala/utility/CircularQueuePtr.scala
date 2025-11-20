@@ -35,6 +35,7 @@ class CircularQueuePtr[T <: CircularQueuePtr[T]](val entries: Int) extends Bundl
   final def +(v: UInt): T = {
     val entries = this.entries
     val new_ptr = Wire(this.asInstanceOf[T].cloneType)
+    new_ptr := this
     if(isPow2(entries)){
       new_ptr := (Cat(this.flag, this.value) + v).asTypeOf(new_ptr)
     } else {
@@ -53,14 +54,16 @@ class CircularQueuePtr[T <: CircularQueuePtr[T]](val entries: Int) extends Bundl
   final def -(v: UInt): T = {
     val flipped_new_ptr = this + (this.entries.U - v)
     val new_ptr = Wire(this.asInstanceOf[T].cloneType)
+    new_ptr := this
     new_ptr.flag := !flipped_new_ptr.flag
     new_ptr.value := flipped_new_ptr.value
     new_ptr
   }
 
-  final def === (that: T): Bool = this.asUInt === that.asUInt
+//  final def === (that: T): Bool = this.asUInt === that.asUInt
+  final def === (that: T): Bool = this.flag === that.flag && this.value === that.value
 
-  final def =/= (that: T): Bool = this.asUInt =/= that.asUInt
+  final def =/= (that: T): Bool = this.flag =/= that.flag || this.value =/= that.value
 
   final def > (that: T): Bool = {
     val differentFlag = this.flag ^ that.flag
@@ -92,7 +95,8 @@ class CircularQueuePtr[T <: CircularQueuePtr[T]](val entries: Int) extends Bundl
 trait HasCircularQueuePtrHelper {
 
   def isEmpty[T <: CircularQueuePtr[T]](enq_ptr: T, deq_ptr: T): Bool = {
-    enq_ptr === deq_ptr
+    (enq_ptr.flag === deq_ptr.flag) && (enq_ptr.value === deq_ptr.value)
+//    enq_ptr === deq_ptr
   }
 
   def isFull[T <: CircularQueuePtr[T]](enq_ptr: T, deq_ptr: T): Bool = {
