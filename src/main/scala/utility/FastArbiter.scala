@@ -48,9 +48,10 @@ class FastArbiter[T <: Data](gen: T, n: Int) extends FastArbiterBase[T](gen, n) 
   val rrGrantMask = RegEnable(VecInit((0 until n) map { i =>
     if(i == 0) false.B else chosenOH(i - 1, 0).orR
   }).asUInt, 0.U(n.W), io.out.fire)
-  val rrSelOH = VecInit(maskToOH((rrGrantMask & pendingMask).asBools)).asUInt
+  val rrSelMask = rrGrantMask & pendingMask
+  val rrSelOH = VecInit(maskToOH((rrSelMask & valids).asBools)).asUInt
   val firstOneOH = VecInit(maskToOH(valids.asBools)).asUInt
-  val rrValid = (rrSelOH & valids).orR
+  val rrValid = (rrSelMask & valids).orR
   chosenOH := Mux(rrValid, rrSelOH, firstOneOH)
 
   io.out.valid := valids.orR
