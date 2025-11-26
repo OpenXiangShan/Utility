@@ -81,6 +81,28 @@ object XSPerfAccumulate extends HasRegularPerfName with XSLogTap {
   }
 }
 
+object XSPerfReference extends HasRegularPerfName with XSLogTap {
+  private val perfInfos = ListBuffer.empty[(Option[BaseModule], String, UInt)]
+  def apply(perfName: String, perfOut: UInt, perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE)
+           (implicit p: Parameters): Unit = {
+    judgeName(perfName)
+    if (p(PerfCounterOptionsKey).enablePerfPrint && perfLevel >= p(PerfCounterOptionsKey).perfLevel) {
+      if(perfInfos.isEmpty) XSLog.registerCaller(collect)
+      perfInfos += ((chisel3.XSCompatibility.currentModule, perfName, perfOut))
+    }
+  }
+  def collect(ctrl: LogPerfIO)(implicit p: Parameters): Unit = {
+    perfInfos.foreach { case (curMod, perfName, perfOut_bore) =>
+      val perfOut = tapOrGet(perfOut_bore)
+      val perfDump = ctrl.dump
+      val valueOut = WireInit(0.U(64.W)).suggestName(perfName + "Out")
+      valueOut := perfOut
+
+      XSPerfPrint(curMod)(perfDump, p"$perfName, $valueOut\n")
+    }
+  }
+}
+
 object XSPerfHistogram extends HasRegularPerfName with XSLogTap {
   // instead of simply accumulating counters
   // this function draws a histogram
