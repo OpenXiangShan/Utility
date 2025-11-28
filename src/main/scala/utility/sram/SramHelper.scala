@@ -192,22 +192,6 @@ object SramHelper {
     "rrTable" -> "rrt",
     "tpMetaTable" -> "tp_meta",
 
-    //icache abbreviations
-    "icache" -> "icsh",
-    "SRAMTemplateWithFixedWidth" -> "dat",
-
-    //bp abbreviations
-    "TageTable" -> "bp_tage",
-    "TageBTable" -> "bp_tage",
-    "SCTable" -> "bp_sc",
-    "ITTageTable" -> "bp_ittage",
-    "FTB" -> "bp_ftb",
-    "us" -> "us",
-    "bt" -> "bt",
-
-    //ftq abbreviations
-    "FtqNRSRAM" -> "ftq",
-
     //dcache abbreviations
     "DataSRAMBank" -> "dcsh_dat",
     "TagArray" -> "dcsh_tag",
