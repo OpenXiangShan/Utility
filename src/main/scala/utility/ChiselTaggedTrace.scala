@@ -177,6 +177,25 @@ object TaggedTrace {
     val PC = Value("PC")
   }
 
+  object InstDetail extends Enumeration {
+    val VAddress = Value("VAddress")
+    val PAddress = Value("PAddress")
+    val LastReplay = Value("LastReplay")
+    val ReplayStr = Value("ReplayStr")
+  }
+
+  object ReplayReason extends Enumeration {
+    val CacheMiss = Value("C")
+    val TLBMiss = Value("T")
+    val BankConflict = Value("B")
+    val Nuke = Value("N")
+    val DcacheStall = Value("S") // mshr full...
+    val RARReplay = Value("R")
+    val RAWReplay = Value("W")
+    val STDForwardFail = Value("F")
+    val OtherReplay = Value("O")
+  }
+
   var enableCCT = false
   
   def init(enable: Boolean) {
@@ -273,11 +292,20 @@ object TaggedTrace {
        |#include <vector>
        |#include <mutex>
        |#include <map>
+       |#include <sstream>
        |
        |enum InstPos {
        |  ${InstPos.values.mkString("", ",\n  ", "")}
        |};
        |
+       |enum InstDetail {
+       |  ${InstDetail.values.mkString("", ",\n  ", "")}
+       |};
+       |
+       |
+       |static char ReplayReasonStr[] = {
+       |   ${ReplayReason.values.mkString("\'", "\',\n \'", "\'")}        
+       |};
        |
        |struct InstMeta
        |{
@@ -286,6 +314,12 @@ object TaggedTrace {
        |  uint64_t instcode;
        |  std::vector< std::vector<uint64_t> > uopTick;
        |  std::mutex uopTickLock;
+       |  // load meta not support split inst
+       |  bool isload;
+       |  uint64_t vaddr;
+       |  uint64_t paddr;
+       |  uint64_t lastReplay;
+       |  std::stringstream replayStr;
        |
        |  void reset(uint64_t sn, uint64_t pc, uint64_t instcode) {
        |    std::lock_guard<std::mutex> guard(uopTickLock);
@@ -293,6 +327,12 @@ object TaggedTrace {
        |    this->pc = pc;
        |    this->instcode = instcode;
        |    uopTick.clear();
+       |
+       |    isload = false;
+       |    vaddr = 0;
+       |    paddr = 0;
+       |    lastReplay = 0;
+       |    replayStr.str(std::string());
        |  }
        |
        |  void updateUopTick(uint64_t uopIdx, const InstPos pos, uint64_t tick) {
@@ -334,7 +374,6 @@ object TaggedTrace {
        |#include "perfCCT.h"
        |#include "chisel_db.h"
        |#include <string>
-       |#include <sstream>
        |
        |extern sqlite3 *mem_db;
        |extern char *zErrMsg;
@@ -357,15 +396,17 @@ object TaggedTrace {
        |  uint64_t commitSN = 0;
        |  uint64_t last_commitSN = 0;
        |
-       |  std::map <int, InstMeta> metas;
+       |  std::map <uint64_t, InstMeta> metas;
        |  // never replace with unordered_map, we need ordered RB-Tree
-       |  std::string sql_insert_cmd;
+       |  std::string sql_insert_cmd, ld_insert_cmd;
        |
        |  std::mutex commitLock; // guard commitSN
        |  std::mutex metaLock;   // guard metas
        |  std::stringstream ss;
        |
-       |  std::map<int, InstMeta>::iterator getMeta(uint64_t sn) {
+       |  uint64_t id = 0;
+       |
+       |  std::map<uint64_t, InstMeta>::iterator getMeta(uint64_t sn) {
        |    if (sn == 0) [[unlikely]] return metas.end();
        |    else {
        |      std::lock_guard<std::mutex> guardMeta(metaLock);
@@ -383,14 +424,25 @@ object TaggedTrace {
        |    sql_insert_cmd = ss.str();
        |    ss.str(std::string());
        |
+       |    ld_insert_cmd = "insert into LoadLifeTimeCommitTrace(ID, VAddress, PAddress, LastReplay, ReplayStr) Values (";
+       |
        |    const char* createTable=
        |    "CREATE TABLE LifeTimeCommitTrace( \\
        |    ID INTEGER PRIMARY KEY AUTOINCREMENT, \\
        |    SN INTEGER NOT NULL, \\
        |    UopIdx INT NOT NULL, \\
-       |    ${InstPos.values.mkString("", " INT NOT NULL, \\\n    ", " INT NOT NULL, \\")}
-       |    DisAsm INT NOT NULL, \\
-       |    PC INT NOT NULL \\
+       |    ${InstPos.values.mkString("", " bigint unsigned NOT NULL, \\\n    ", " bigint unsigned NOT NULL, \\")}
+       |    DisAsm int unsigned NOT NULL, \\
+       |    PC bigint unsigned NOT NULL \\
+       |    ); \\
+       |    CREATE TABLE LoadLifeTimeCommitTrace( \\
+       |      ID int unsigned PRIMARY KEY, \\
+       |      VAddress bigint unsigned not null, \\
+       |      PAddress bigint unsigned not null, \\
+       |      LastReplay bigint unsigned not null, \\
+       |      ReplayStr char(10) not null, \\
+       |      constraint fk_id \\
+       |        foreign key (ID) references LifeTimeCommitTrace(ID) \\
        |    );";
        |
        |    rc = sqlite3_exec(mem_db, createTable, callback_temp, 0, &zErrMsg);
@@ -402,10 +454,9 @@ object TaggedTrace {
        |#endif
        |  }
        |
-       |  void tick() {
+       |  void tick() { // negedge trigger
        |#if ${enableCCT.toString()}
        |    if (!enable_dump_lifetime) [[likely]] return;
-       |    // negedge trigger
        |    if (cur_tick != global_tick_acc) {
        |      cur_tick = global_tick_acc;
        |      // update last_max_sn
@@ -422,17 +473,25 @@ object TaggedTrace {
        |          ss << sql_insert_cmd;
        |          ss << it->second.sn << "," << uopidx;
        |          for (auto pos_it = it->second.uopTick[uopidx].begin();
-       |               pos_it != it->second.uopTick[uopidx].end();
-       |               pos_it++) {
-       |              ss << "," << *pos_it;
+       |            pos_it != it->second.uopTick[uopidx].end();
+       |            pos_it++) {
+       |            ss << "," << *pos_it;
        |          }
        |          ss << "," << it->second.instcode;
-       |          // pc is unsigned, but sqlite3 only supports signed integer [-2^63, 2^63-1]
-       |          // if real pc > 2^63-1, it will be stored as negative number 
-       |          // (negtive pc = real pc - 2^64)
-       |          // when read a negtive pc, real pc = negtive pc + 2^64
-       |          ss << "," << int64_t(it->second.pc); 
+       |          ss << "," << it->second.pc; 
        |          ss << ");";
+       |
+       |          id ++;
+       |
+       |          if (it->second.isload) {
+       |            ss << ld_insert_cmd;
+       |            ss << id << ',';
+       |            ss << it->second.vaddr << ',';
+       |            ss << it->second.paddr << ',';
+       |            ss << it->second.lastReplay << ',';
+       |            ss << '\\'' << it->second.replayStr.str() << '\\'';
+       |            ss << ");";
+       |          }
        |
        |          rc = sqlite3_exec(mem_db, ss.str().c_str(), callback_temp, 0, &zErrMsg);
        |          if (rc != SQLITE_OK) {
@@ -475,10 +534,33 @@ object TaggedTrace {
        |  }
        |
        |  // interface example
-       |  void updateInstMeta(uint64_t, uint64_t, uint64_t, uint64_t) {
+       |  void updateInstMeta(uint64_t sn, uint64_t uopIdx, uint64_t detail, uint64_t val) {
        |#if ${enableCCT.toString()}
        |    if (!enable_dump_lifetime) [[likely]] return;
-       |    // do somthing
+       |     
+       |     auto meta = getMeta(sn);
+       |     if (meta == metas.end()) [[unlikely]] return;
+       |     switch (detail) {
+       |       case InstDetail::VAddress: {
+       |         meta->second.isload = true;
+       |         meta->second.vaddr = val;
+       |         break;
+       |       }
+       |       case InstDetail::PAddress: {
+       |         meta->second.paddr = val;
+       |         break;
+       |       }
+       |       case InstDetail::LastReplay:{
+       |         meta->second.lastReplay = val;
+       |         break;
+       |       }
+       |       case InstDetail::ReplayStr:{
+       |         assert(val < sizeof(ReplayReasonStr));
+       |         meta->second.replayStr << ReplayReasonStr[val];
+       |         break;
+       |       }
+       |     }
+       |
        |#endif
        |  }
        |
