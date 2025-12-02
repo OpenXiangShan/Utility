@@ -81,6 +81,60 @@ object XSPerfAccumulate extends HasRegularPerfName with XSLogTap {
   }
 }
 
+object XSPerfPriorityAccumulate {
+  /**
+   * A utility to generate a sequence of XSPerfAccumulate with priority
+   * @param perfNamePrefix The prefix of the performance counter names
+   * @param perfValid A common valid signal for all performance counters
+   * @param perfCntSeq A sequence of (name: String, valid: Bool) or (name: String, valid: Bool, value: UInt)
+   * @param perfLevel Logging level of these perf counters
+   *
+   * @example {{{
+   *   // accumulate boolean conditions
+   *   XSPerfAccumulate("perf_a", valid && cond_a)
+   *   XSPerfAccumulate("perf_b", valid && !cond_a && cond_b)
+   *   XSPerfAccumulate("perf_c", valid && !cond_a && !cond_b && cond_c)
+   *   // becomes:
+   *   XSPerfPriorityAccumulate("perf", valid, Seq(
+   *     ("a", cond_a),
+   *     ("b", cond_b),
+   *     ("c", cond_c)
+   *   ))
+   * }}}
+   *
+   * @example {{{
+   *   // accumulate values with conditions
+   *   XSPerfAccumulate("perf_a", Mux(valid && cond_a, value_a, 0.U))
+   *   XSPerfAccumulate("perf_b", Mux(valid && !cond_a && cond_b, value_b, 0.U))
+   *   XSPerfAccumulate("perf_c", Mux(valid && !cond_a && !cond_b && cond_c, value_c, 0.U))
+   *   // becomes:
+   *   XSPerfPriorityAccumulate("perf", valid, Seq(
+   *     ("a", cond_a, value_a),
+   *     ("b", cond_b, value_b),
+   *     ("c", cond_c, value_c)
+   *   ))
+   * }}}
+   */
+  def apply(
+      perfNamePrefix: String,
+      perfValid: Bool,
+      perfCntSeq: Seq[Product],
+      perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE
+  )(implicit p: Parameters): Unit = {
+    var previousValid = false.B
+    perfCntSeq.foreach {
+      case (name: String, valid: Bool, value: UInt) =>
+        XSPerfAccumulate(s"${perfNamePrefix}_$name", Mux(perfValid && !previousValid && valid, value, 0.U), perfLevel)
+        previousValid = previousValid || valid
+      case (name: String, valid: Bool) =>
+        XSPerfAccumulate(s"${perfNamePrefix}_$name", perfValid && !previousValid && valid, perfLevel)
+        previousValid = previousValid || valid
+      case _ =>
+        throw new Exception("XSPerfPriorityAccumulate perfCntSeq must be Seq[(String, Bool)] or [(String, Bool, UInt)]")
+    }
+  }
+}
+
 object XSPerfReference extends HasRegularPerfName with XSLogTap {
   private val perfInfos = ListBuffer.empty[(Option[BaseModule], String, UInt)]
   def apply(perfName: String, perfOut: UInt, perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE)
