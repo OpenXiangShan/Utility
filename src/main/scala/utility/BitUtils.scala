@@ -53,8 +53,24 @@ class CircularShift(data: UInt) {
   def right(step: Int): UInt = helper(step, false)
 }
 
+class CircularShiftSeq(data: Seq[Bool]) {
+  private val width = data.length
+  private def helper(step: Int, isLeft: Boolean): Seq[Bool] = {
+    val shiftStep = step % width
+    val shifted = if (isLeft) {
+      data.takeRight(shiftStep) ++ data.dropRight(shiftStep)
+    } else {
+      data.drop(shiftStep) ++ data.take(shiftStep)
+    }
+    shifted
+  }
+  def left(step: Int): Seq[Bool] = helper(step, true)
+  def right(step: Int): Seq[Bool] = helper(step, false)
+}
+
 object CircularShift {
   def apply(data: UInt): CircularShift = new CircularShift(data)
+  def apply(data: Seq[Bool]): CircularShiftSeq = new CircularShiftSeq(data)
 }
 
 object WordShift {
@@ -117,6 +133,8 @@ object OneHot {
   def checkOneHot(in: Bits): Unit = assert(PopCount(in) <= 1.U)
   def checkOneHot(in: Iterable[Bool]): Unit = assert(PopCount(in) <= 1.U)
   def OHToUIntStartOne(in: UInt): UInt = OHToUInt(in << 1)
+  def UIntToOHSeq(in: UInt, width: Int): Seq[Bool] = (0 until width).map(i => in === i.U)
+  def UIntToOHSeq(in: UInt): Seq[Bool] = UIntToOHSeq(in, in.getWidth)
 }
 
 object LowerMask {
