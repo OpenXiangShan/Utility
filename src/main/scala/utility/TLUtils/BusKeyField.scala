@@ -47,6 +47,17 @@ object MemReqSource extends Enumeration {
 
   val reqSourceBits = log2Ceil(ReqSourceCount.id)
 
+  def isCPUReq(reqSource: UInt): Bool = {
+    reqSource === CPULoadData.id.U ||
+    reqSource === CPUStoreData.id.U ||
+    reqSource === CPUAtomicData.id.U
+  }
+
+  def isL1Prefetch(reqSource: UInt): Bool = {
+    reqSource === L1InstPrefetch.id.U ||
+    reqSource === L1DataPrefetch.id.U
+  }
+
   def isL2Prefetch(reqSource: UInt): Bool = {
     reqSource === Prefetch2L2BOP.id.U ||
     reqSource === Prefetch2L2PBOP.id.U ||
