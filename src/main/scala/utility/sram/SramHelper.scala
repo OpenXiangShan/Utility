@@ -216,6 +216,7 @@ object SramHelper {
     "PtwCache" -> "ptw",
     "l0" -> "l0",
     "l1" -> "l1",
+    "bitmapcache" -> "bitmap",
 
     //prefetch abbreviations
     "prefetch" -> "pftch",
