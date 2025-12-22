@@ -61,29 +61,29 @@ class CircularQueuePtr[T <: CircularQueuePtr[T]](val entries: Int) extends Bundl
   }
 
 //  final def === (that: T): Bool = this.asUInt === that.asUInt
-  final def === (that: T): Bool = this.flag === that.flag && this.value === that.value
+  def === (that: T): Bool = this.flag === that.flag && this.value === that.value
 
-  final def =/= (that: T): Bool = this.flag =/= that.flag || this.value =/= that.value
+  def =/= (that: T): Bool = this.flag =/= that.flag || this.value =/= that.value
 
-  final def > (that: T): Bool = {
+  def > (that: T): Bool = {
     val differentFlag = this.flag ^ that.flag
     val compare = this.value > that.value
     differentFlag ^ compare
   }
 
-  final def < (that: T): Bool = {
+  def < (that: T): Bool = {
     val differentFlag = this.flag ^ that.flag
     val compare = this.value < that.value
     differentFlag ^ compare
   }
 
-  final def >= (that: T): Bool = {
+  def >= (that: T): Bool = {
     val differentFlag = this.flag ^ that.flag
     val compare = this.value >= that.value
     differentFlag ^ compare
   }
 
-  final def <= (that: T): Bool = {
+  def <= (that: T): Bool = {
     val differentFlag = this.flag ^ that.flag
     val compare = this.value <= that.value
     differentFlag ^ compare
