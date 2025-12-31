@@ -220,7 +220,12 @@ object SramHelper {
 
     //prefetch abbreviations
     "prefetch" -> "pftch",
-    "pht_ram" -> "pht"
+    "pht_ram" -> "pht",
+
+    //CUTE abbreviations
+    "cute" -> "cute",
+    "CMatrixReg" -> "cmat",
+    "ABMatrixReg" -> "abmat",
   ).toMap
 
   def getSramSuffix(vn:String):String = {
