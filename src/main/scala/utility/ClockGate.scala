@@ -21,31 +21,45 @@ import chisel3.util.experimental.BoringUtils
 
 import scala.collection.mutable
 
-class ClockGate extends BlackBox with HasBlackBoxInline {
-  val io = IO(new Bundle {
-    val TE = Input(Bool())
-    val E  = Input(Bool())
-    val CK = Input(Clock())
-    val Q  = Output(Clock())
-  })
+// class ClockGate extends BlackBox with HasBlackBoxInline {
+//   val io = IO(new Bundle {
+//     val TE = Input(Bool())
+//     val E  = Input(Bool())
+//     val CK = Input(Clock())
+//     val Q  = Output(Clock())
+//   })
+// 
+//   val sverilog =
+//     """
+//       |module ClockGate (
+//       |  input  wire TE,
+//       |  input  wire E,
+//       |  input  wire CK,
+//       |  output wire Q
+//       |);
+//       |  reg EN;
+//       |  always_latch begin
+//       |    if(!CK) EN = TE | E;
+//       |  end
+//       |  assign Q = CK & EN;
+//       |endmodule
+//       |
+//       |""".stripMargin
+//   setInline("ClockGate.sv", sverilog)
+// }
 
-  val sverilog =
-    """
-      |module ClockGate (
-      |  input  wire TE,
-      |  input  wire E,
-      |  input  wire CK,
-      |  output wire Q
-      |);
-      |  reg EN;
-      |  always_latch begin
-      |    if(!CK) EN = TE | E;
-      |  end
-      |  assign Q = CK & EN;
-      |endmodule
-      |
-      |""".stripMargin
-  setInline("ClockGate.sv", sverilog)
+class ClockGate extends RawModule {
+  val TE = IO(Input(Bool()))
+  val E  = IO(Input(Bool()))
+  val CK = IO(Input(Clock()))
+  val Q  = IO(Output(Clock()))
+
+  val clk_en = E | TE
+  withClock((~(CK.asBool)).asClock) {
+    val clk_en_reg = Reg(Bool())
+    clk_en_reg := clk_en
+    Q := (CK.asBool & clk_en_reg).asClock
+  }
 }
 
 class ClockGateTeBundle extends Bundle {
@@ -55,7 +69,7 @@ class ClockGateTeBundle extends Bundle {
 object ClockGate {
   private val teQueue = new mutable.Queue[ClockGateTeBundle]
   def apply(TE: Bool, E: Bool, CK: Clock) : Clock = {
-    val clock_gate = Module(new ClockGate).io
+    val clock_gate = Module(new ClockGate)
     clock_gate.TE := TE
     clock_gate.E  := E
     clock_gate.CK := CK

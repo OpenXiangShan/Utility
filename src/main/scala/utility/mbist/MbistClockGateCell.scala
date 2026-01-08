@@ -43,18 +43,18 @@ class MbistClockGateCell(mcpCtl: Boolean) extends Module {
   val out_clock = IO(Output(Clock()))
 
   private val CG = Module(new ClockGate)
-  CG.io.TE := dft.cgen
-  CG.io.CK := clock
+  CG.TE := dft.cgen
+  CG.CK := clock
 
   if (mcpCtl) {
-    CG.io.E := Mux(mbist.req, mbist.readen | mbist.writeen, E) && !dft.ram_mcp_hold
+    CG.E := Mux(mbist.req, mbist.readen | mbist.writeen, E) && !dft.ram_mcp_hold
     val clockMux = Module(new ClockMux)
-    clockMux.clk0 := CG.io.Q
+    clockMux.clk0 := CG.Q
     clockMux.clk1 := dft.ram_aux_clk.asClock
     clockMux.sel := dft.ram_aux_ckbp
     out_clock := clockMux.clkout
   } else {
-    CG.io.E := Mux(mbist.req, mbist.readen | mbist.writeen, E)
-    out_clock := CG.io.Q
+    CG.E := Mux(mbist.req, mbist.readen | mbist.writeen, E)
+    out_clock := CG.Q
   }
 }
