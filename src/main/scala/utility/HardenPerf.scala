@@ -2,12 +2,18 @@ package utility
 
 import chisel3._
 import chisel3.util.experimental.BoringUtils
-
 import scala.collection.mutable.ListBuffer
-import utility.LogPerfHelper
+
+object Constants {
+  val PerfEventLen = 32
+}
 
 class PerfEventBundle extends Bundle {
-  val value: UInt = UInt(64.W)
+  val value: UInt = UInt(Constants.PerfEventLen.W)
+}
+
+class IOPerfOutput(len: Int) extends Bundle {
+  val data = UInt(len.W)
 }
 
 object HardenXSPerfAccumulate {
@@ -16,41 +22,32 @@ object HardenXSPerfAccumulate {
 
   def apply[T <: Data](
                         name: String,
-                        perfCnt: T,
-                        wire: Boolean = false // perfCnt direct connection
+                        perfCnt: T
                       ): Unit = {
     if (enabled) {
       val id = register(perfCnt, name)
       println(s"# Hardened Counter $id: $name")
 
-      val helper = Module(new LogPerfHelper)
-      val perfClean = helper.io.clean
+      val counter = RegInit(0.U(Constants.PerfEventLen.W)).suggestName(name + "Counter")
+      val next_counter = WireInit(0.U(Constants.PerfEventLen.W)).suggestName(name + "Next")
+      next_counter := counter + perfCnt.asTypeOf(UInt(Constants.PerfEventLen.W))
+      counter := next_counter
 
-      val counter = RegInit(0.U(64.W)).suggestName(name + "Counter")
-      val next_counter = WireInit(0.U(64.W)).suggestName(name + "Next")
-      next_counter := counter + perfCnt.asTypeOf(UInt(64.W))
-      counter := Mux(perfClean, 0.U, next_counter)
-
-      val probe = WireInit(0.U(64.W))
-      if (wire)
-        probe := perfCnt.asTypeOf(UInt(64.W))
-      else
-        probe := counter
-      BoringUtils.addSource(probe, name)
+      BoringUtils.addSource(RegNext(RegNext(RegNext(counter))), name)
     }
   }
 
-  def reclaim(): Vec[PerfEventBundle] = {
+  def reclaim(): (Vec[PerfEventBundle], Int) = {
     lazy val io_perf: Vec[PerfEventBundle] = IO(Output(Vec(instances.length, new PerfEventBundle)))
     io_perf.zip(instances).foreach{
       case (perf, (_, name)) =>
-        val portal = WireInit(0.U(64.W))
+        val portal = WireInit(0.U(Constants.PerfEventLen.W))
         BoringUtils.addSink(portal, name)
         perf.value := portal
     }
     FileRegisters.add("HardenPerf.cpp", generateCppParser())
     FileRegisters.add("DSEMacro.v", generateVerilog())
-    io_perf
+    (io_perf, instances.length)
   }
 
   def register[T <: Data](gen: T, name: String): Int = {

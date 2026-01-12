@@ -37,11 +37,7 @@ class ClockGate extends BlackBox with HasBlackBoxInline {
       |  input  wire CK,
       |  output wire Q
       |);
-      |  reg EN;
-      |  always_latch begin
-      |    if(!CK) EN = TE | E;
-      |  end
-      |  assign Q = CK & EN;
+      |  assign Q = CK;
       |endmodule
       |
       |""".stripMargin
