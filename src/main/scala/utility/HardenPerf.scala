@@ -47,6 +47,7 @@ object HardenXSPerfAccumulate {
     }
     FileRegisters.add("HardenPerf.cpp", generateCppParser())
     FileRegisters.add("DSEMacro.v", generateVerilog())
+    FileRegisters.add("NormalPerfList.txt", generateNormalPerfList())
     (io_perf, instances.length)
   }
 
@@ -55,6 +56,14 @@ object HardenXSPerfAccumulate {
     val element = (gen, name)
     instances += element
     id
+  }
+
+  def generateNormalPerfList(): String = {
+    val perfList = ListBuffer.empty[String]
+    for (i <- instances.indices) {
+      perfList += instances(i)._2
+    }
+    perfList.mkString("\n")
   }
 
   def generateCppParser(pldm: Boolean = false): String = {
