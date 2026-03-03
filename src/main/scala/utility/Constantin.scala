@@ -141,25 +141,50 @@ object Constantin extends ConstantinParams {
        |
        |void constantinLoad() {
        |  constantinInit();
-       |  uint64_t num;
+       |
+       |  const char *custom_file = getenv("CONSTANT_FILE");
        |  const char *noop_home = getenv("NOOP_HOME");
        |#ifdef NOOP_HOME
        |  if (!noop_home) {
        |    noop_home = NOOP_HOME;
        |  }
        |#endif
-       |  string noop_home_s = noop_home;
-       |  string tmp = noop_home_s + "/build/${objectName}.txt";
-       |  cf.open(tmp.c_str(), ios::in);
-       |  if(cf.good()){
-       |    while (cf >> tmp >> num) {
-       |      constantinMap[tmp] = num;
-       |    }
-       |  }else{
-       |    cout << "[WARNING] " << tmp << " does not exist, so all constants default to initialized values." << endl;
-       |  }
-       |  cf.close();
        |
+       |  auto load_from_file = [&](const string &path, bool verbose = false) -> bool {
+       |    string key;
+       |    uint64_t num;
+       |    cf.open(path.c_str(), ios::in);
+       |    if (cf.good()) {
+       |      cout << "[INFO] Loaded constants from " << path << endl;
+       |      while (cf >> key >> num) {
+       |        constantinMap[key] = num;
+       |        if (verbose) cout << "       " << key << " = " << num << endl;
+       |      }
+       |      cf.close();
+       |      return true;
+       |    }
+       |    cf.close();
+       |    return false;
+       |  };
+       |
+       |  if (custom_file) {
+       |    if(load_from_file(custom_file, true)){
+       |      return;
+       |    } 
+       |    cout << "[INFO] " << custom_file << " does not exist, trying default path..." << endl;
+       |  } else {
+       |    cout << "[INFO] CONSTANT_FILE is not set, trying default path..." << endl;
+       |  }
+       |  if (noop_home) {
+       |    string noop_home_s = noop_home;
+       |    string default_path = noop_home_s + "/build/constantin.txt";
+       |    if (load_from_file(default_path)) {
+       |      return;
+       |    }
+       |    cout << "[INFO] " << default_path << " does not exist, so all constants default to initialized values." << endl;
+       |  } else {
+       |    cout << "[INFO] NOOP_HOME is not set, so all constants default to initialized values." << endl;
+       |  }
        |}
        |""".stripMargin
   }
