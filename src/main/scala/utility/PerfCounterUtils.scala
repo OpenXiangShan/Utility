@@ -84,12 +84,13 @@ object XSPerfAccumulate extends HasRegularPerfName with XSLogTap {
     perfNamePrefix: String,
     perfValid: Bool,
     perfCntSeq: Seq[Product],
+    perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE
   )(implicit p: Parameters): Unit = {
     perfCntSeq.foreach {
       case (name: String, valid: Bool, value: UInt) =>
-        XSPerfAccumulate(s"${perfNamePrefix}_$name", Mux(perfValid && valid, value, 0.U), XSPerfLevel.VERBOSE)
+        XSPerfAccumulate(s"${perfNamePrefix}_$name", Mux(perfValid && valid, value, 0.U), perfLevel)
       case (name: String, valid: Bool) =>
-        XSPerfAccumulate(s"${perfNamePrefix}_$name", perfValid && valid, XSPerfLevel.VERBOSE)
+        XSPerfAccumulate(s"${perfNamePrefix}_$name", perfValid && valid, perfLevel)
       case _ =>
         throw new Exception("XSPerfAccumulate perfCntSeq must be Seq[(String, Bool)] or [(String, Bool, UInt)]")
     }
