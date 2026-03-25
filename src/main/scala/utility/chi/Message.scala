@@ -36,6 +36,12 @@ case object CHIDataCheckKey extends Field[String]("oddparity")
 
 case object CHIEnablePoisonKey extends Field[Boolean](true)
 
+object CHIChannel {
+  def TXREQ = "b001".U
+  def TXRSP = "b010".U
+  def TXDAT = "b100".U
+}
+
 object CHICohStates {
   val width = 3
 
