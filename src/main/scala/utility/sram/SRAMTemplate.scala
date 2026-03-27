@@ -226,6 +226,7 @@ class SRAMTemplate[T <: Data](
     } else {
       None
     }
+    val resetDone = Output(Bool())
   })
 
   require(latency >= 1)
@@ -494,6 +495,8 @@ class SRAMTemplate[T <: Data](
   private val resetHold = if(shouldReset) resetState else false.B
   io.r.req.ready := !resetHold && !singleHold && !conflictStallRead
   io.w.req.ready := !resetHold && !conflictStallWrite
+
+  io.resetDone := !resetHold
 }
 
 /**
@@ -518,6 +521,8 @@ class SplittedSRAMTemplate[T <: Data]
   val io = IO(new Bundle() {
     val r = Flipped(new SRAMReadBus(gen, set, way))
     val w = Flipped(new SRAMWriteBus(gen, set, way, useBitmask))
+
+    val resetDone = Output(Bool())
   })
 
   val extra_reset = if (extraReset) Some(IO(Input(Bool()))) else None
@@ -594,6 +599,7 @@ class SplittedSRAMTemplate[T <: Data]
   io.r.req.ready := VecInit((0 until setSplit).map(i => array(i).head.head.io.r.req.ready))(r_bankSel)
   io.w.req.ready := VecInit((0 until setSplit).map(i => array(i).head.head.io.w.req.ready))(w_bankSel)
 
+  io.resetDone := array.flatMap(_.flatMap(_.map(_.io.resetDone))).reduce(_ && _)
 
   // * an example of "setSplit 2, waySplit 2, dataSplit 4" of an SRAM with way 2 *
   // =========================================================================================
@@ -638,6 +644,8 @@ class FoldedSRAMTemplate[T <: Data](
   val io = IO(new Bundle {
     val r = Flipped(new SRAMReadBus(gen, set, way))
     val w = Flipped(new SRAMWriteBus(gen, set, way, useBitmask))
+
+    val resetDone = Output(Bool())
   })
   val extra_reset = if (extraReset) Some(IO(Input(Bool()))) else None
   //   |<----- setIdx ----->|
@@ -662,6 +670,8 @@ class FoldedSRAMTemplate[T <: Data](
 
   io.r.req.ready := array.io.r.req.ready
   io.w.req.ready := array.io.w.req.ready
+
+  io.resetDone := array.io.resetDone
 
   val raddr = io.r.req.bits.setIdx >> log2Ceil(width)
   val ridx = RegEnable(if (width != 1) io.r.req.bits.setIdx(log2Ceil(width)-1, 0) else 0.U(1.W), io.r.req.valid)
@@ -701,6 +711,8 @@ class SRAMTemplateWithArbiter[T <: Data](nRead: Int, gen: T, set: Int, way: Int 
   val io = IO(new Bundle {
     val r = Flipped(Vec(nRead, new SRAMReadBus(gen, set, way)))
     val w = Flipped(new SRAMWriteBus(gen, set, way))
+
+    val resetDone = Output(Bool())
   })
 
   val ram = Module(new SRAMTemplate(gen, set, way, shouldReset = shouldReset, holdRead = false, singlePort = true,
@@ -715,4 +727,6 @@ class SRAMTemplateWithArbiter[T <: Data](nRead: Int, gen: T, set: Int, way: Int 
   io.r.map{ case r => {
     r.resp.data := HoldUnless(ram.io.r.resp.data, GatedValidRegNext(r.req.fire))
   }}
+
+  io.resetDone := ram.io.resetDone
 }
