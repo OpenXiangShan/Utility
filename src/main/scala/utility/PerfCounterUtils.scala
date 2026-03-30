@@ -79,39 +79,25 @@ object XSPerfAccumulate extends HasRegularPerfName with XSLogTap {
       XSPerfPrint(curMod)(perfDump, p"$perfName, $next_counter\n")
     }
   }
-
-  def apply(
-    perfNamePrefix: String,
-    perfValid: Bool,
-    perfCntSeq: Seq[Product],
-    perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE
-  )(implicit p: Parameters): Unit = {
-    perfCntSeq.foreach {
-      case (name: String, valid: Bool, value: UInt) =>
-        XSPerfAccumulate(s"${perfNamePrefix}_$name", Mux(perfValid && valid, value, 0.U), perfLevel)
-      case (name: String, valid: Bool) =>
-        XSPerfAccumulate(s"${perfNamePrefix}_$name", perfValid && valid, perfLevel)
-      case _ =>
-        throw new Exception("XSPerfAccumulate perfCntSeq must be Seq[(String, Bool)] or [(String, Bool, UInt)]")
-    }
-  }
 }
 
-object XSPerfPriorityAccumulate {
+object XSPerfSeqAccumulate {
   /**
-   * A utility to generate a sequence of XSPerfAccumulate with priority
+   * A utility to generate a sequence of XSPerfAccumulate with common prefixes
+   *
    * @param perfNamePrefix The prefix of the performance counter names
    * @param perfValid A common valid signal for all performance counters
    * @param perfCntSeq A sequence of (name: String, valid: Bool) or (name: String, valid: Bool, value: UInt)
    * @param perfLevel Logging level of these perf counters
+   * @param withPriority Accumulate only on the first valid counter
    *
    * @example {{{
    *   // accumulate boolean conditions
    *   XSPerfAccumulate("perf_a", valid && cond_a)
-   *   XSPerfAccumulate("perf_b", valid && !cond_a && cond_b)
-   *   XSPerfAccumulate("perf_c", valid && !cond_a && !cond_b && cond_c)
+   *   XSPerfAccumulate("perf_b", valid && cond_b)
+   *   XSPerfAccumulate("perf_c", valid && cond_c)
    *   // becomes:
-   *   XSPerfPriorityAccumulate("perf", valid, Seq(
+   *   XSPerfSeqAccumulate("perf", valid, Seq(
    *     ("a", cond_a),
    *     ("b", cond_b),
    *     ("c", cond_c)
@@ -121,32 +107,47 @@ object XSPerfPriorityAccumulate {
    * @example {{{
    *   // accumulate values with conditions
    *   XSPerfAccumulate("perf_a", Mux(valid && cond_a, value_a, 0.U))
-   *   XSPerfAccumulate("perf_b", Mux(valid && !cond_a && cond_b, value_b, 0.U))
-   *   XSPerfAccumulate("perf_c", Mux(valid && !cond_a && !cond_b && cond_c, value_c, 0.U))
+   *   XSPerfAccumulate("perf_b", Mux(valid && cond_b, value_b, 0.U))
+   *   XSPerfAccumulate("perf_c", Mux(valid && cond_c, value_c, 0.U))
    *   // becomes:
-   *   XSPerfPriorityAccumulate("perf", valid, Seq(
+   *   XSPerfSeqAccumulate("perf", valid, Seq(
    *     ("a", cond_a, value_a),
    *     ("b", cond_b, value_b),
    *     ("c", cond_c, value_c)
    *   ))
    * }}}
+   *
+   * @example {{{
+   *   // accumulate boolean conditions with priority
+   *   XSPerfAccumulate("perf_a", valid && cond_a)
+   *   XSPerfAccumulate("perf_b", valid && !cond_a && cond_b)
+   *   XSPerfAccumulate("perf_c", valid && !cond_a && !cond_b && cond_c)
+   *   // becomes:
+   *   XSPerfPriorityAccumulate("perf", valid, Seq(
+   *     ("a", cond_a),
+   *     ("b", cond_b),
+   *     ("c", cond_c)
+   *   ), withPriority = true)
+   *   // similarly, we can accumulate values with condition and priority
+   * }}}
    */
   def apply(
-      perfNamePrefix: String,
-      perfValid: Bool,
-      perfCntSeq: Seq[Product],
-      perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE
+    perfNamePrefix: String,
+    perfValid: Bool,
+    perfCntSeq: Seq[Product],
+    perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE,
+    withPriority: Boolean = false
   )(implicit p: Parameters): Unit = {
     var previousValid = false.B
     perfCntSeq.foreach {
       case (name: String, valid: Bool, value: UInt) =>
         XSPerfAccumulate(s"${perfNamePrefix}_$name", Mux(perfValid && !previousValid && valid, value, 0.U), perfLevel)
-        previousValid = previousValid || valid
+        if (withPriority) previousValid = previousValid || valid
       case (name: String, valid: Bool) =>
         XSPerfAccumulate(s"${perfNamePrefix}_$name", perfValid && !previousValid && valid, perfLevel)
-        previousValid = previousValid || valid
+        if (withPriority) previousValid = previousValid || valid
       case _ =>
-        throw new Exception("XSPerfPriorityAccumulate perfCntSeq must be Seq[(String, Bool)] or [(String, Bool, UInt)]")
+        throw new Exception("XSPerfSeqAccumulate perfCntSeq must be Seq[(String, Bool)] or [(String, Bool, UInt)]")
     }
   }
 }
