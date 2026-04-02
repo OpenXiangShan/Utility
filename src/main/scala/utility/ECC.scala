@@ -78,13 +78,13 @@ class ParityCode extends Code
   def canCorrect = false
 
   def width(w0: Int) = w0+1
-  def encode(x: UInt, poison: Bool = false.B) = Cat(x.xorR ^ poison, x)
+  def encode(x: UInt, poison: Bool = false.B) = Cat(ParallelXOR(Cat(x, poison).asBools), x)
   def swizzle(x: UInt) = Cat(false.B, x)
   def decode(y: UInt) = new Decoding {
     val uncorrected = y(y.getWidth-2,0)
     val corrected = uncorrected
     val correctable = false.B
-    val uncorrectable = y.xorR
+    val uncorrectable = ParallelXOR((y).asBools)
   }
 }
 
@@ -144,7 +144,7 @@ class SECCode extends Code
     require ((poison.isLit && poison.litValue == 0) || poisonous(n), s"SEC code of length ${n} cannot be poisoned")
 
     /* By setting the entire syndrome on poison, the corrected bit falls off the end of the code */
-    val syndromeUInt = VecInit.tabulate(n-k) { j => (syndrome(j)(k-1, 0) & x).xorR ^ poison }.asUInt
+    val syndromeUInt = VecInit.tabulate(n-k) { j => ParallelXOR(Cat((syndrome(j)(k-1, 0) & x), poison).asBools) }.asUInt
     Cat(syndromeUInt, x)
   }
 
@@ -153,14 +153,14 @@ class SECCode extends Code
     val k = n - log2Ceil(n)
     val (_, sys2hamm, syndrome) = impl(n, k)
 
-    val syndromeUInt = VecInit.tabulate(n-k) { j => (syndrome(j) & y).xorR }.asUInt
+    val syndromeUInt = VecInit.tabulate(n-k) { j => ParallelXOR((syndrome(j) & y).asBools) }.asUInt
 
     val hammBadBitOH = UIntToOH(syndromeUInt, n+1)
     val sysBadBitOH = VecInit.tabulate(k) { i => hammBadBitOH(sys2hamm(i)) }.asUInt
 
     val uncorrected = y(k-1, 0)
     val corrected = uncorrected ^ sysBadBitOH
-    val correctable = syndromeUInt.orR
+    val correctable = ParallelOR(syndromeUInt.asBools)
     val uncorrectable = if (poisonous(n)) { syndromeUInt > n.U } else { false.B }
   }
 }
