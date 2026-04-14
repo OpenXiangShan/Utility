@@ -31,8 +31,8 @@ trait ConstantinParams {
 }
 
 private class SignalReadHelper(constName: String, initValue: BigInt)
-  extends BlackBox with HasBlackBoxInline with ConstantinParams {
-  val io = IO(new Bundle{
+  extends ExtModule with ConstantinParams {
+  val io = FlatIO(new Bundle{
     val value = Output(UInt(UIntWidth.W))
   })
 

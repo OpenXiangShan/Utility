@@ -16,13 +16,12 @@
 package utility
 
 import chisel3._
-import chisel3.experimental.StringParam
 import chisel3.util._
 import freechips.rocketchip.util.DataToAugmentedData
 import java.lang
 import freechips.rocketchip.amba.ahb.AHBImpMaster.bundle
 
-trait HasDPICUtils extends BlackBox with HasBlackBoxInline {
+trait HasDPICUtils extends ExtModule {
   var moduleName: String = ""
   def init(args: Bundle, negedge: Boolean = false, comb_output: Boolean = false) = {
     val field = args.elements.map(t => {
@@ -50,7 +49,7 @@ trait HasDPICUtils extends BlackBox with HasBlackBoxInline {
 
     val className = this.getClass().getSimpleName()
     moduleName = className + "_DPIC_Helper"
-    val dpicFunc = lang.Character.toLowerCase(className.charAt(0)) + className.substring(1)
+    val dpicFunc = s"${lang.Character.toLowerCase(className.charAt(0))}${className.substring(1)}"
     val verilog =
       s"""
          |import "DPI-C" function ${if (has_out) "longint unsigned" else "void"} $dpicFunc
@@ -99,7 +98,7 @@ object InstSeqNum {
 
 class GlobalSimNegedge extends HasDPICUtils {
   // only can be instantiated once
-  val io = IO(new Bundle() {
+  val io = FlatIO(new Bundle() {
     val clock = Input(Clock())
     val reset = Input(Reset())
     val en = Input(Bool())
@@ -108,7 +107,7 @@ class GlobalSimNegedge extends HasDPICUtils {
 }
 
 class CreateInstMeta extends HasDPICUtils {
-  val io = IO(new Bundle() {
+  val io = FlatIO(new Bundle() {
     val clock = Input(Clock())
     val reset = Input(Reset())
     val en = Input(Bool())
@@ -121,7 +120,7 @@ class CreateInstMeta extends HasDPICUtils {
 }
 
 class UpdateInstPos extends HasDPICUtils {
-  val io = IO(new Bundle() {
+  val io = FlatIO(new Bundle() {
     val clock = Input(Clock())
     val reset = Input(Reset())
     val en = Input(Bool())
@@ -133,7 +132,7 @@ class UpdateInstPos extends HasDPICUtils {
 }
 
 class UpdateInstMeta extends HasDPICUtils {
-  val io = IO(new Bundle() {
+  val io = FlatIO(new Bundle() {
     val clock = Input(Clock())
     val reset = Input(Reset())
     val en = Input(Bool())
@@ -146,7 +145,7 @@ class UpdateInstMeta extends HasDPICUtils {
 }
 
 class CommitInstMeta extends HasDPICUtils {
-  val io = IO(new Bundle() {
+  val io = FlatIO(new Bundle() {
     val clock = Input(Clock())
     val reset = Input(Reset())
     val en = Input(Bool())
@@ -198,11 +197,11 @@ object TaggedTrace {
 
   var enableCCT = false
   
-  def init(enable: Boolean) {
+  def init(enable: Boolean): Unit = {
     enableCCT = enable
   }
 
-  def tick(clock: Clock, reset: Reset) {
+  def tick(clock: Clock, reset: Reset): Unit = {
     if (enableCCT) {
       val m = Module(new GlobalSimNegedge)
       m.io.clock := clock
@@ -225,7 +224,7 @@ object TaggedTrace {
     return 0.U
   }
 
-  def updateInstPos(seq: InstSeqNum, pos: UInt, en: Bool, clock: Clock, reset: Reset) {
+  def updateInstPos(seq: InstSeqNum, pos: UInt, en: Bool, clock: Clock, reset: Reset): Unit = {
     if (enableCCT) {
       val m = Module(new UpdateInstPos)
       m.io.clock := clock
@@ -237,14 +236,14 @@ object TaggedTrace {
     }
   }
 
-  def updateInstPos(sn: UInt, pos: UInt, en: Bool, clock: Clock, reset: Reset) {
+  def updateInstPos(sn: UInt, pos: UInt, en: Bool, clock: Clock, reset: Reset): Unit = {
     val seq = InstSeqNum()
     seq.seqNum := sn
     seq.uopIdx := 0.U
     updateInstPos(seq, pos, en, clock, reset)
   }
 
-  def updateInstMeta(seq: InstSeqNum, meta: UInt, data: UInt, en: Bool, clock: Clock, reset: Reset) {
+  def updateInstMeta(seq: InstSeqNum, meta: UInt, data: UInt, en: Bool, clock: Clock, reset: Reset): Unit = {
     if (enableCCT) {
       val m = Module(new UpdateInstMeta)
       m.io.clock := clock
@@ -257,14 +256,14 @@ object TaggedTrace {
     }
   }
 
-  def updateInstMeta(sn: UInt, meta: UInt, data: UInt, en: Bool, clock: Clock, reset: Reset) {
+  def updateInstMeta(sn: UInt, meta: UInt, data: UInt, en: Bool, clock: Clock, reset: Reset): Unit = {
     val seq = InstSeqNum()
     seq.seqNum := sn
     seq.uopIdx := 0.U
     updateInstMeta(seq, meta, data, en, clock, reset)
   }
 
-  def commitInstMeta(order_id: UInt, sn: UInt, block_size: UInt, en: Bool, clock: Clock, reset: Reset) {
+  def commitInstMeta(order_id: UInt, sn: UInt, block_size: UInt, en: Bool, clock: Clock, reset: Reset): Unit = {
     if (enableCCT) {
       val m = Module(new CommitInstMeta)
       m.io.clock := clock
@@ -627,7 +626,7 @@ object TaggedTrace {
        """.stripMargin
   }
 
-  def addToFileRegisters {
+  def addToFileRegisters: Unit = {
     FileRegisters.add("perfCCT.h", getCHeader)
     FileRegisters.add("perfCCT.cpp", getCpp)
   }

@@ -61,7 +61,7 @@ class PriorityMuxGenerator[T <: Data] {
         src = in.toList.map{ case (b, t, n) => (b, t, genPortName(n)) } ::: src
     }
     def register(sel: Seq[Bool], in: Seq[T], name: Seq[Option[String]]) = {
-        src = (sel,in,name.map(genPortName)).zipped.toList ::: src
+        src = sel.lazyZip(in).lazyZip(name.map(genPortName)).toList ::: src
     }
     def apply(): T = {
         val names = src.map(_._3)

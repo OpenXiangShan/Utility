@@ -105,6 +105,7 @@ object TLLogger {
         log.channel := d
         log.user := bmp_to_uint(d_chn.user)
         log.echo := bmp_to_uint(d_chn.echo)
+      case _ =>
     }
   }
 

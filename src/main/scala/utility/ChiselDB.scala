@@ -17,7 +17,6 @@
 package utility
 
 import chisel3._
-import chisel3.experimental.StringParam
 import chisel3.util._
 
 trait HasTableUtils {
@@ -168,14 +167,13 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
 }
 
 private class TableWriteHelper[T <: Record](tableName: String, hw: T, site: String)
-    extends BlackBox(
+    extends ExtModule(
       Map(
         "site" -> StringParam(site)
       )
     )
-    with HasBlackBoxInline
     with HasTableUtils {
-  val io = IO(new Bundle() {
+  val io = FlatIO(new Bundle() {
     val clock = Input(Clock())
     val reset = Input(Reset())
     val en = Input(Bool())

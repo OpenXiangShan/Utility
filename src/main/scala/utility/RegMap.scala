@@ -19,6 +19,8 @@ package utility
 import chisel3._
 import chisel3.util._
 
+import scala.language.implicitConversions
+
 object RegMap {
   def Unwritable = null
   def apply(addr: Int, reg: UInt, wfn: UInt => UInt = (x => x)) = (addr, (reg, wfn))

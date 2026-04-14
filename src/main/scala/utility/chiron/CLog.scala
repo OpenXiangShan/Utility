@@ -46,9 +46,9 @@ private object CLogBWriteParameters {
   }
 }
 
-private class CLogBWriteParameters(id: String, params: CHIParameters) extends BlackBox with HasBlackBoxInline {
+private class CLogBWriteParameters(id: String, params: CHIParameters) extends ExtModule {
 
-  val io = IO(new Bundle {
+  val io = FlatIO(new Bundle {
     val clock = Input(Clock())
     val reset = Input(Reset())
     val en = Input(Bool())
@@ -134,9 +134,9 @@ private object CLogBWriteTopo {
   }
 }
 
-private class CLogBWriteTopo(id: String, topo: Seq[(Int, Int)], uniqueName: String = "", desc: String = "") extends BlackBox with HasBlackBoxInline {
+private class CLogBWriteTopo(id: String, topo: Seq[(Int, Int)], uniqueName: String = "", desc: String = "") extends ExtModule {
 
-  val io = IO(new Bundle {
+  val io = FlatIO(new Bundle {
     val clock = Input(Clock())
     val reset = Input(Reset())
     val en = Input(Bool())
@@ -211,9 +211,9 @@ private object CLogBWriteRecord {
   }
 }
 
-private class CLogBWriteRecord(id: String, channel: Int, flitLength: Int, vTime: Boolean, uniqueName: String = "", desc: String = "") extends BlackBox with HasBlackBoxInline {
+private class CLogBWriteRecord(id: String, channel: Int, flitLength: Int, vTime: Boolean, uniqueName: String = "", desc: String = "") extends ExtModule {
 
-  val io = IO(new Bundle {
+  val io = FlatIO(new Bundle {
     val clock = Input(Clock())
     val reset = Input(Reset())
     val en = Input(Bool())
