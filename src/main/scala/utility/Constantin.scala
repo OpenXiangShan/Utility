@@ -152,7 +152,6 @@ object Constantin extends ConstantinParams {
   def addToFileRegisters = {
     FileRegisters.add(s"${objectName}.hpp", getCHeader)
     var cppContext = getInitCpp
-    // cppContext += getPreProcessCpp
     cppContext += initMap.map({a => getCpp(a._1)}).foldLeft("")(_ + _)
     FileRegisters.add(s"${objectName}.cpp", cppContext)
     FileRegisters.add(s"${objectName}.txt", getTXT)
