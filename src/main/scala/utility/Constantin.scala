@@ -125,70 +125,11 @@ object Constantin extends ConstantinParams {
        |""".stripMargin
   }
 
-  def getPreProcessCpp: String = {
-    s"""
-       |#include <iostream>
-       |#include <fstream>
-       |#include <map>
-       |#include <string>
-       |#include <cstring>
-       |#include <stdint.h>
-       |using namespace std;
-       |
-       |extern map<string, uint64_t> constantinMap;
-       |
-       |void constantinUpdate(string name, uint64_t num){
-       |  if(constantinMap.find(name) == constantinMap.end()){
-       |    cout << "[ERROR] constant does not exist: " << name << ", please check the input." << endl;
-       |    exit(1);
-       |  }
-       |  constantinMap[name] = num;
-       |  return;
-       |}
-       |
-       |void constantinLoad(const char *cst_file) {
-       |  constantinInit();
-       |
-       |  if (cst_file == nullptr || strlen(cst_file) == 0) {
-       |    cout << "[INFO] init for constantin: loaded from init." << endl;
-       |    return;
-       |  }
-       |
-       |  uint64_t num;
-       |  string name;
-       |  if (string(cst_file) == "stdin") {
-       |    cout << "[INFO] stdin for constantin: loaded from stdin." << endl;
-       |    uint64_t total_num;
-       |    cout << "Please input total constant number:" << endl;
-       |    cin >> total_num;
-       |    cout << "Please input each constant ([constant name] [value]):" << endl;
-       |    for (uint64_t i = 0; i < total_num; i++) {
-       |      cin >> name >> num;
-       |      constantinUpdate(name, num);
-       |    }
-       |    return;
-       |  }
-       |
-       |  ifstream cf(cst_file, ios::in);
-       |  if (cf.good()) {
-       |    cout << "[INFO] file for constantin: loaded from " << cst_file << "." << endl;
-       |    while (cf >> name >> num) {
-       |      constantinUpdate(name, num);
-       |    }
-       |    cf.close();
-       |    return;
-       |  }else{
-       |    cerr << "[ERROR] constantin file does not exist: " << cst_file << endl;
-       |    exit(1);
-       |  }
-       |}
-       |""".stripMargin
-  }
-
   def getCpp(constName: String): String = {
     s"""
        |#include <map>
        |#include <string>
+       |#include <iostream>
        |#include <stdint.h>
        |#include <assert.h>
        |using namespace std;
@@ -211,7 +152,7 @@ object Constantin extends ConstantinParams {
   def addToFileRegisters = {
     FileRegisters.add(s"${objectName}.hpp", getCHeader)
     var cppContext = getInitCpp
-    cppContext += getPreProcessCpp
+    // cppContext += getPreProcessCpp
     cppContext += initMap.map({a => getCpp(a._1)}).foldLeft("")(_ + _)
     FileRegisters.add(s"${objectName}.cpp", cppContext)
     FileRegisters.add(s"${objectName}.txt", getTXT)
