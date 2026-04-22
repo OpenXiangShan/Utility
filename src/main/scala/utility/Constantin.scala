@@ -21,7 +21,6 @@ import chisel3.util._
 
 trait ConstantinParams {
   def UIntWidth = 64
-  def AutoSolving = false
   def getdpicFunc(constName: String) = {
     s"${constName}_constantin_read"
   }
@@ -126,76 +125,11 @@ object Constantin extends ConstantinParams {
        |""".stripMargin
   }
 
-  def getPreProcessCpp: String = {
-    s"""
-       |#include <iostream>
-       |#include <fstream>
-       |#include <map>
-       |#include <string>
-       |#include <cstdlib>
-       |#include <stdint.h>
-       |using namespace std;
-       |
-       |fstream cf;
-       |extern map<string, uint64_t> constantinMap;
-       |
-       |void constantinLoad() {
-       |  constantinInit();
-       |  uint64_t num;
-       |  const char *noop_home = getenv("NOOP_HOME");
-       |#ifdef NOOP_HOME
-       |  if (!noop_home) {
-       |    noop_home = NOOP_HOME;
-       |  }
-       |#endif
-       |  string noop_home_s = noop_home;
-       |  string tmp = noop_home_s + "/build/${objectName}.txt";
-       |  cf.open(tmp.c_str(), ios::in);
-       |  if(cf.good()){
-       |    while (cf >> tmp >> num) {
-       |      constantinMap[tmp] = num;
-       |    }
-       |  }else{
-       |    cout << "[WARNING] " << tmp << " does not exist, so all constants default to initialized values." << endl;
-       |  }
-       |  cf.close();
-       |
-       |}
-       |""".stripMargin
-  }
-
-  def getPreProcessFromStdInCpp: String = {
-    s"""
-       |#include <iostream>
-       |#include <map>
-       |#include <string>
-       |#include <cstdlib>
-       |#include <stdint.h>
-       |using namespace std;
-       |
-       |extern map<string, uint64_t> constantinMap;
-       |
-       |void constantinLoad() {
-       |  constantinInit();
-       |  uint64_t num;
-       |  string tmp;
-       |  uint64_t total_num;
-       |  cout << "please input total constant number" << endl;
-       |  cin >> total_num;
-       |  cout << "please input each constant ([constant name] [value])" << endl;
-       |  for(int i=0; i<total_num; i++) {
-       |    cin >> tmp >> num;
-       |    constantinMap[tmp] = num;
-       |  }
-       |
-       |}
-       |""".stripMargin
-  }
-
   def getCpp(constName: String): String = {
     s"""
        |#include <map>
        |#include <string>
+       |#include <iostream>
        |#include <stdint.h>
        |#include <assert.h>
        |using namespace std;
@@ -218,11 +152,6 @@ object Constantin extends ConstantinParams {
   def addToFileRegisters = {
     FileRegisters.add(s"${objectName}.hpp", getCHeader)
     var cppContext = getInitCpp
-    if (AutoSolving) {
-      cppContext += getPreProcessFromStdInCpp
-    } else {
-      cppContext += getPreProcessCpp
-    }
     cppContext += initMap.map({a => getCpp(a._1)}).foldLeft("")(_ + _)
     FileRegisters.add(s"${objectName}.cpp", cppContext)
     FileRegisters.add(s"${objectName}.txt", getTXT)
