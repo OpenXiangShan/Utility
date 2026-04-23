@@ -77,6 +77,7 @@ private[utility] trait XSLogTap {
 object XSLog extends XSLogTap {
   private val logInfos = ListBuffer.empty[LogPerfParam]
   private val callBacks = ListBuffer.empty[(LogPerfIO) => Unit]
+  private val callBacksWithClock = ListBuffer.empty[(LogPerfIO, Reset, Clock) => Unit]
   private val logModules = ListBuffer.empty[BaseModule]
 
   private def unpackPrintable(pable: Printable): (String, Seq[Data]) = {
@@ -158,7 +159,9 @@ object XSLog extends XSLogTap {
   // As XSPerf depends on LogPerfIO, their apply will be buffered until collection
   // Register collect() method from Callers when first apply, then call that during collection
   def registerCaller(caller: LogPerfIO => Unit): Unit = callBacks += caller
+  def registerCallerWithClock(caller: (LogPerfIO, Reset, Clock) => Unit): Unit = callBacksWithClock += caller
   def invokeCaller(ctrl: LogPerfIO): Unit = callBacks.foreach(caller => caller(ctrl))
+  def invokeCallerWithClock(ctrl: LogPerfIO, reset: Reset, clock: Clock) = callBacksWithClock.foreach(caller => caller(ctrl, reset, clock))
 
   // Should only be called during firrtl phase(ChiselStage)
   // PathName can not be accessed until circuit elaboration
@@ -205,6 +208,7 @@ private class LogPerfEndpoint()(implicit p: Parameters) extends Module {
   }
 
   // To collect deferred call from XSPerf/..., invoke all registered caller
+  XSLog.invokeCallerWithClock(io, reset, clock)
   XSLog.invokeCaller(io)
   // Group printfs with same cond to reduce system tasks for better thread schedule
   XSLog.tapInfos.groupBy(_.cond).values.foreach { infos =>

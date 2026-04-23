@@ -75,7 +75,6 @@ object XSPerfAccumulate extends HasRegularPerfName with XSLogTap {
       val next_counter = WireInit(0.U(64.W)).suggestName(perfName + "Next")
       next_counter := counter + perfCnt
       counter := Mux(perfClean, 0.U, next_counter)
-
       XSPerfPrint(curMod)(perfDump, p"$perfName, $next_counter\n")
     }
   }
