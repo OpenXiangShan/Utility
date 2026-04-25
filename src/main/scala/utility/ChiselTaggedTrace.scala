@@ -551,7 +551,8 @@ object TaggedTrace {
        |         break;
        |       }
        |       case InstDetail::LastReplay:{
-       |         meta->second.lastReplay = val;
+       |         // dont care the val
+       |         meta->second.lastReplay = global_tick_acc;
        |         break;
        |       }
        |       case InstDetail::ReplayStr:{
