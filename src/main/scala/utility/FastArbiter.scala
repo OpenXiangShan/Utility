@@ -19,8 +19,12 @@ package utility
 import chisel3._
 import chisel3.util._
 
+class FastArbiterIO[T <: Data](private val gen: T, val n: Int) extends ArbiterIO(gen, n) {
+  val chosenOH = Output(UInt(n.W))
+}
+
 abstract class FastArbiterBase[T <: Data](val gen: T, val n: Int) extends Module {
-  val io = IO(new ArbiterIO[T](gen, n))
+  val io = IO(new FastArbiterIO[T](gen, n))
 
   def maskToOH(seq: Seq[Bool]) = {
     seq.zipWithIndex.map{
@@ -60,6 +64,7 @@ class FastArbiter[T <: Data](gen: T, n: Int) extends FastArbiterBase[T](gen, n) 
     case (rdy, grant) => rdy := grant && io.out.ready
   }
 
+  io.chosenOH := chosenOH
   io.chosen := OHToUInt(chosenOH)
 
 }
@@ -102,5 +107,7 @@ class LatchFastArbiter[T <: Data](gen: T, n: Int) extends FastArbiterBase[T](gen
 
   io.out.valid := out_valid_reg && valids(OHToUInt(chosen_reg))
   io.out.bits <> out_bits_reg
+
+  io.chosenOH := chosen_reg
   io.chosen := OHToUInt(chosen_reg)
 }
