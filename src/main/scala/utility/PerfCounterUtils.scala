@@ -430,6 +430,38 @@ object XSPerfRolling extends HasRegularPerfName {
   }
 }
 
+object ArbPerf {
+  def apply(valids: Seq[Bool], readys: Seq[Bool], outRdy: Bool, name: String)(implicit p: Parameters): Unit = {
+    require(valids.size == readys.size)
+    val n = valids.size
+    if (n == 0) {
+      ()
+    } else {
+      XSPerfHistogram(s"${name}ArbConflict", PopCount(valids), VecInit(valids).asUInt.orR, 1, n + 1)
+      val zeroBuckets = (0.until(n * 2).map(x => (0.U, x)) :+ (0.U, n * 2))
+      valids.zip(readys).zipWithIndex.map { case ((v, r), i) =>
+        val w = RegInit(0.U(64.W))
+        when (!v) {
+          w := 0.U
+        }.elsewhen (v && r) {
+          w := 0.U
+        }.elsewhen (v && !r && outRdy) {
+          w := w + 1.U
+        }
+        0.until(n*2).map(x => ((x.U === w && v && r).asUInt, x)) :+ (((w >= (n*2).U && v && r).asUInt, n*2))
+      }.foldLeft(zeroBuckets) { (left, right) =>
+        left.zip(right).map { case (a, b) => (a._1 + b._1, a._2) }
+      }.foreach { case (cnt, time) =>
+        XSPerfAccumulate(s"${name}ArbWaitTime_${time}", cnt)
+      }
+    }
+  }
+
+  def apply[T <: Data](arb: FastArbiterBase[T], name: String)(implicit p: Parameters): Unit = {
+    apply(arb.io.in.map(_.valid), arb.io.in.map(_.ready), arb.io.out.ready, name)
+  }
+}
+
 object XSPerfPrint {
   // XSPerf depends on LogPerfIO passed from Top, defer apply and collect to endpoint
   // XSLog is also deferred apply in another module, pass original module for pathName
