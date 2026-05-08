@@ -19,7 +19,7 @@ package utility
 import chisel3._
 import chisel3.util._
 
-class FastArbiterIO[T <: Data](private val gen: T, val n: Int) extends ArbiterIO(gen, n) {
+class FastArbiterIO[T <: Data](private val gen: T, override val n: Int) extends ArbiterIO(gen, n) {
   val chosenOH = Output(UInt(n.W))
 }
 
@@ -110,4 +110,47 @@ class LatchFastArbiter[T <: Data](gen: T, n: Int) extends FastArbiterBase[T](gen
 
   io.chosenOH := chosen_reg
   io.chosen := OHToUInt(chosen_reg)
+}
+
+class TwoLevelRRArbiter[T <: Data](gen: T, n: Int) extends FastArbiterBase[T](gen, n) {
+  if (n == 0) {
+    io.out.valid := false.B
+    io.out.bits := 0.U.asTypeOf(io.out.bits)
+    io.chosen := 0.U
+    io.chosenOH := 0.U
+  } else if (n == 1) {
+    io.out.valid := io.in.head.valid
+    io.out.bits := io.in.head.bits
+    io.in.head.ready := io.out.ready
+    io.chosen := 0.U
+    io.chosenOH := Mux(io.in.head.valid, 1.U, 0.U)
+  } else {
+    val mid = n / 2
+    val rest = n - mid
+    val lowArb = Module(new FastArbiter(gen, mid))
+    val highArb = Module(new FastArbiter(gen, rest))
+    val selLow = RegInit(false.B)
+
+    lowArb.io.in <> io.in.take(mid)
+    highArb.io.in <> io.in.drop(mid)
+
+    val finalSelLow = Mux1H(Seq(
+      (lowArb.io.out.valid && highArb.io.out.valid) -> selLow,
+      (lowArb.io.out.valid && !highArb.io.out.valid) -> true.B,
+      (!lowArb.io.out.valid && highArb.io.out.valid) -> false.B
+    ))
+
+    when (io.out.fire) {
+      selLow := Mux(finalSelLow, !highArb.io.out.valid, lowArb.io.out.valid)
+    }
+
+    io.out.valid := lowArb.io.out.valid || highArb.io.out.valid
+    io.out.bits := Mux(finalSelLow, lowArb.io.out.bits, highArb.io.out.bits)
+    lowArb.io.out.ready := io.out.ready && finalSelLow
+    highArb.io.out.ready := io.out.ready && !finalSelLow
+
+
+    io.chosenOH := Cat(Fill(rest, !finalSelLow) & highArb.io.chosenOH, Fill(mid, finalSelLow).asUInt & lowArb.io.chosenOH)
+    io.chosen := OHToUInt(io.chosenOH)
+  }
 }
