@@ -406,3 +406,17 @@ object FastAdderComparator {
   def apply(a: UInt, b: UInt, k: UInt): Bool = apply(a, b, false.B, k)
 
 }
+
+object MaskToOH {
+  def apply(mask: Seq[Bool]): UInt = {
+    val oh = VecInit(mask.zipWithIndex.map{
+      case (b, 0) => b
+      case (b, i) => b && !Cat(mask.take(i)).orR
+    }).asUInt
+    oh
+  }
+
+  def apply(mask: UInt): UInt = {
+    apply(mask.asBools)
+  }
+}

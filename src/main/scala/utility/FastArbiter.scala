@@ -19,15 +19,12 @@ package utility
 import chisel3._
 import chisel3.util._
 
-abstract class FastArbiterBase[T <: Data](val gen: T, val n: Int) extends Module {
-  val io = IO(new ArbiterIO[T](gen, n))
+class FastArbiterIO[T <: Data](private val gen: T, override val n: Int) extends ArbiterIO(gen, n) {
+  val chosenOH = Output(UInt(n.W))
+}
 
-  def maskToOH(seq: Seq[Bool]) = {
-    seq.zipWithIndex.map{
-      case (b, 0) => b
-      case (b, i) => b && !Cat(seq.take(i)).orR
-    }
-  }
+abstract class FastArbiterBase[T <: Data](val gen: T, val n: Int) extends Module {
+  val io = IO(new FastArbiterIO[T](gen, n))
 }
 
 class FastArbiter[T <: Data](gen: T, n: Int) extends FastArbiterBase[T](gen, n) {
@@ -48,8 +45,8 @@ class FastArbiter[T <: Data](gen: T, n: Int) extends FastArbiterBase[T](gen, n) 
   val rrGrantMask = RegEnable(VecInit((0 until n) map { i =>
     if(i == 0) false.B else chosenOH(i - 1, 0).orR
   }).asUInt, 0.U(n.W), io.out.fire)
-  val rrSelOH = VecInit(maskToOH((rrGrantMask & pendingMask).asBools)).asUInt
-  val firstOneOH = VecInit(maskToOH(valids.asBools)).asUInt
+  val rrSelOH = MaskToOH(rrGrantMask & pendingMask)
+  val firstOneOH = MaskToOH(valids)
   val rrValid = (rrSelOH & valids).orR
   chosenOH := Mux(rrValid, rrSelOH, firstOneOH)
 
@@ -60,6 +57,7 @@ class FastArbiter[T <: Data](gen: T, n: Int) extends FastArbiterBase[T](gen, n) 
     case (rdy, grant) => rdy := grant && io.out.ready
   }
 
+  io.chosenOH := chosenOH
   io.chosen := OHToUInt(chosenOH)
 
 }
@@ -82,8 +80,8 @@ class LatchFastArbiter[T <: Data](gen: T, n: Int) extends FastArbiterBase[T](gen
   val rrGrantMask = RegEnable(VecInit((0 until n) map { i =>
     if(i == 0) false.B else chosenOH(i - 1, 0).orR
   }).asUInt, 0.U(n.W), latch_result)
-  val rrSelOH = VecInit(maskToOH((rrGrantMask & pendingMask).asBools)).asUInt
-  val firstOneOH = VecInit(maskToOH(valids.asBools)).asUInt
+  val rrSelOH = MaskToOH(rrGrantMask & pendingMask)
+  val firstOneOH = MaskToOH(valids)
   val rrValid = (rrSelOH & valids).orR
   chosenOH := Mux(rrValid, rrSelOH, firstOneOH)
 
@@ -102,5 +100,50 @@ class LatchFastArbiter[T <: Data](gen: T, n: Int) extends FastArbiterBase[T](gen
 
   io.out.valid := out_valid_reg && valids(OHToUInt(chosen_reg))
   io.out.bits <> out_bits_reg
+
+  io.chosenOH := chosen_reg
   io.chosen := OHToUInt(chosen_reg)
+}
+
+class TwoLevelRRArbiter[T <: Data](gen: T, n: Int) extends FastArbiterBase[T](gen, n) {
+  if (n == 0) {
+    io.out.valid := false.B
+    io.out.bits := 0.U.asTypeOf(io.out.bits)
+    io.chosen := 0.U
+    io.chosenOH := 0.U
+  } else if (n == 1) {
+    io.out.valid := io.in.head.valid
+    io.out.bits := io.in.head.bits
+    io.in.head.ready := io.out.ready
+    io.chosen := 0.U
+    io.chosenOH := Mux(io.in.head.valid, 1.U, 0.U)
+  } else {
+    val mid = n / 2
+    val rest = n - mid
+    val lowArb = Module(new FastArbiter(gen, mid))
+    val highArb = Module(new FastArbiter(gen, rest))
+    val selLow = RegInit(false.B)
+
+    lowArb.io.in <> io.in.take(mid)
+    highArb.io.in <> io.in.drop(mid)
+
+    val finalSelLow = Mux1H(Seq(
+      (lowArb.io.out.valid && highArb.io.out.valid) -> selLow,
+      (lowArb.io.out.valid && !highArb.io.out.valid) -> true.B,
+      (!lowArb.io.out.valid && highArb.io.out.valid) -> false.B
+    ))
+
+    when (io.out.fire) {
+      selLow := Mux(finalSelLow, !highArb.io.out.valid, lowArb.io.out.valid)
+    }
+
+    io.out.valid := lowArb.io.out.valid || highArb.io.out.valid
+    io.out.bits := Mux(finalSelLow, lowArb.io.out.bits, highArb.io.out.bits)
+    lowArb.io.out.ready := io.out.ready && finalSelLow
+    highArb.io.out.ready := io.out.ready && !finalSelLow
+
+
+    io.chosenOH := Cat(Fill(rest, !finalSelLow) & highArb.io.chosenOH, Fill(mid, finalSelLow).asUInt & lowArb.io.chosenOH)
+    io.chosen := OHToUInt(io.chosenOH)
+  }
 }
