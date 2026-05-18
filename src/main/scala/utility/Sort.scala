@@ -50,8 +50,8 @@ object DataWithPtr {
 object HwSort {
   /** Hardware Sort, a small combinational sorter that can sort up to 4 data by Ptr.
     * 
-    * The sort is stable. That is, elements that are invalid or equal (as determined by `cmp` function),
-    * appear in the same order in the sorted sequence as in the original.
+    * Valid elements are placed before invalid elements and sorted by `cmp`.
+    * The order of equal elements and invalid elements is not guaranteed to be stable.
     * 
     * @tparam A default Data
     * @tparam B the type where "<" is defined, here it refers to [[CircularQueuePtr]]
@@ -83,8 +83,8 @@ object HwSort {
       res := xVec
     } else if (size == 2) {
       // total ~20 ps
-      // 1 is older than 0 (only when 0 and 1 are both valid)
-      val swap = xVec(0).valid && xVec(1).valid && cmp(xVec(1).ptr, xVec(0).ptr)
+      // Put valid elements first. If both are valid, sort them by cmp.
+      val swap = xVec(1).valid && (!xVec(0).valid || cmp(xVec(1).ptr, xVec(0).ptr))
       when(swap) {
         res(0) := xVec(1)
         res(1) := xVec(0)
@@ -136,10 +136,10 @@ object HwSort {
       row2(3) := tmp2_2(1)
 
       val tmp3_1 = apply(VecInit(row2(0), row2(1)))
-      row3(1) := tmp3_1(0)
-      row3(2) := tmp3_1(1)
+      row3(0) := tmp3_1(0)
+      row3(1) := tmp3_1(1)
       val tmp3_2 = apply(VecInit(row2(2), row2(3)))
-      row3(0) := tmp3_2(0)
+      row3(2) := tmp3_2(0)
       row3(3) := tmp3_2(1)
 
       res := row3
