@@ -24,7 +24,19 @@ import freechips.rocketchip.amba.ahb.AHBImpMaster.bundle
 
 trait HasDPICUtils extends BlackBox with HasBlackBoxInline {
   var moduleName: String = ""
-  def init(args: Bundle, negedge: Boolean = false, comb_output: Boolean = false) = {
+
+  /**
+    *
+    * make module that call dpic function
+    * 
+    * io must contains "clock, reset, en"
+    *
+    * @param args input the io
+    * @param negedge trigger on negedge clock
+    * @param comb_output if has output, use wire out not reg
+    * @param overrideFuncname override the dpic name, default is class name
+    */
+  def init(args: Bundle, negedge: Boolean = false, comb_output: Boolean = false, overrideFuncname: String = "") {
     val field = args.elements.map(t => {
       val name = t._1
       val tpes = t._2.getClass.getMethods.map(x => x.getName()).toList
@@ -48,9 +60,9 @@ trait HasDPICUtils extends BlackBox with HasBlackBoxInline {
       throw new Exception
     }
 
-    val className = this.getClass().getSimpleName()
-    moduleName = className + "_DPIC_Helper"
-    val dpicFunc = lang.Character.toLowerCase(className.charAt(0)) + className.substring(1)
+    val dpic_name = if (overrideFuncname.isEmpty()) this.getClass().getSimpleName() else overrideFuncname
+    moduleName = dpic_name + "_DPIC_Helper"
+    val dpicFunc = lang.Character.toLowerCase(dpic_name.charAt(0)) + dpic_name.substring(1)
     val verilog =
       s"""
          |import "DPI-C" function ${if (has_out) "longint unsigned" else "void"} $dpicFunc
