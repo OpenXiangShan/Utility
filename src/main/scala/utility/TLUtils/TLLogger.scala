@@ -110,6 +110,9 @@ object TLLogger {
 
   def logA(log: TLLog, a: TLBundleA) = {
     writeChannel(log, a)
+    when (a.opcode(2,1) === TLMessages.PutFullData(2,1)) {
+      log.data := a.data.asTypeOf(log.data)
+    }
   }
 
   def logB(log: TLLog, b: TLBundleB) = {
