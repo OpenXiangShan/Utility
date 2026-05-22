@@ -182,6 +182,7 @@ object TaggedTrace {
     val PAddress = Value("PAddress")
     val LastReplay = Value("LastReplay")
     val ReplayStr = Value("ReplayStr")
+    val BlockStartTick = Value("BlockStartTick")
   }
 
   object ReplayReason extends Enumeration {
@@ -196,7 +197,7 @@ object TaggedTrace {
     val OtherReplay = Value("O")
   }
 
-  var enableCCT = false
+  var enableCCT = true
   
   def init(enable: Boolean) {
     enableCCT = enable
@@ -290,6 +291,7 @@ object TaggedTrace {
        |#include <unistd.h>
        |#include <sqlite3.h>
        |#include <vector>
+       |#include <utility>
        |#include <mutex>
        |#include <map>
        |#include <sstream>
@@ -319,6 +321,9 @@ object TaggedTrace {
        |  uint64_t vaddr;
        |  uint64_t paddr;
        |  uint64_t lastReplay;
+       |  uint64_t blockStartTick;
+       |  bool blockStartTickValid;
+       |  std::vector< std::pair<uint8_t, uint64_t> > replayEvents;
        |  std::stringstream replayStr;
        |
        |  void reset(uint64_t sn, uint64_t pc, uint64_t instcode) {
@@ -332,7 +337,11 @@ object TaggedTrace {
        |    vaddr = 0;
        |    paddr = 0;
        |    lastReplay = 0;
+       |    blockStartTick = 0;
+       |    blockStartTickValid = false;
+       |    replayEvents.clear();
        |    replayStr.str(std::string());
+       |    replayStr.clear();
        |  }
        |
        |  void updateUopTick(uint64_t uopIdx, const InstPos pos, uint64_t tick) {
@@ -398,7 +407,7 @@ object TaggedTrace {
        |
        |  std::map <uint64_t, InstMeta> metas;
        |  // never replace with unordered_map, we need ordered RB-Tree
-       |  std::string sql_insert_cmd, ld_insert_cmd;
+       |  std::string sql_insert_cmd, ld_insert_cmd, ld_replay_insert_cmd;
        |
        |  std::mutex commitLock; // guard commitSN
        |  std::mutex metaLock;   // guard metas
@@ -425,6 +434,7 @@ object TaggedTrace {
        |    ss.str(std::string());
        |
        |    ld_insert_cmd = "insert into LoadLifeTimeCommitTrace(ID, VAddress, PAddress, LastReplay, ReplayStr) Values (";
+       |    ld_replay_insert_cmd = "insert into LoadReplayTrace(ID, ReplayIdx, ReplayReason, ReplayTick, BlockStartTick, Extra0, Extra1) Values (";
        |
        |    const char* createTable=
        |    "CREATE TABLE LifeTimeCommitTrace( \\
@@ -443,6 +453,18 @@ object TaggedTrace {
        |      ReplayStr char(10) not null, \\
        |      constraint fk_id \\
        |        foreign key (ID) references LifeTimeCommitTrace(ID) \\
+       |    ); \\
+       |    CREATE TABLE LoadReplayTrace( \\
+       |      ID int unsigned not null, \\
+       |      ReplayIdx int unsigned not null, \\
+       |      ReplayReason char(1) not null, \\
+       |      ReplayTick bigint unsigned not null, \\
+       |      BlockStartTick bigint unsigned not null, \\
+       |      Extra0 bigint unsigned not null, \\
+       |      Extra1 bigint unsigned not null, \\
+       |      primary key (ID, ReplayIdx), \\
+       |      constraint fk_replay_id \\
+       |        foreign key (ID) references LoadLifeTimeCommitTrace(ID) \\
        |    );";
        |
        |    rc = sqlite3_exec(mem_db, createTable, callback_temp, 0, &zErrMsg);
@@ -491,14 +513,41 @@ object TaggedTrace {
        |            ss << it->second.lastReplay << ',';
        |            ss << '\\'' << it->second.replayStr.str() << '\\'';
        |            ss << ");";
-       |          }
        |
-       |          rc = sqlite3_exec(mem_db, ss.str().c_str(), callback_temp, 0, &zErrMsg);
-       |          if (rc != SQLITE_OK) {
-       |            printf("commitMeta SQL error: %s\\n", zErrMsg);
-       |            exit(1);
+       |            rc = sqlite3_exec(mem_db, ss.str().c_str(), callback_temp, 0, &zErrMsg);
+       |            if (rc != SQLITE_OK) {
+       |              printf("commitMeta SQL error: %s\\n", zErrMsg);
+       |              exit(1);
+       |            }
+       |            ss.str(std::string());
+       |
+       |            for (size_t replay_idx = 0; replay_idx < it->second.replayEvents.size(); ++replay_idx) {
+       |              const auto &event = it->second.replayEvents[replay_idx];
+       |              ss << ld_replay_insert_cmd;
+       |              ss << id << ',';
+       |              ss << replay_idx << ',';
+       |              ss << '\\'' << ReplayReasonStr[event.first] << '\\'' << ',';
+       |              ss << event.second << ',';
+       |              ss << it->second.blockStartTick << ',';
+       |              ss << 0 << ',';
+       |              ss << 0;
+       |              ss << ");";
+       |
+       |              rc = sqlite3_exec(mem_db, ss.str().c_str(), callback_temp, 0, &zErrMsg);
+       |              if (rc != SQLITE_OK) {
+       |                printf("commitMeta SQL error: %s\\n", zErrMsg);
+       |                exit(1);
+       |              }
+       |              ss.str(std::string());
+       |            }
+       |          } else {
+       |            rc = sqlite3_exec(mem_db, ss.str().c_str(), callback_temp, 0, &zErrMsg);
+       |            if (rc != SQLITE_OK) {
+       |              printf("commitMeta SQL error: %s\\n", zErrMsg);
+       |              exit(1);
+       |            }
+       |            ss.str(std::string());
        |          }
-       |          ss.str(std::string());
        |        }
        |        if (it->second.uopTick[0].at(AtCommit) != 0)
        |          lastCommittedInsts.push_back(&(it->second));
@@ -557,6 +606,14 @@ object TaggedTrace {
        |       case InstDetail::ReplayStr:{
        |         assert(val < sizeof(ReplayReasonStr));
        |         meta->second.replayStr << ReplayReasonStr[val];
+       |         meta->second.replayEvents.emplace_back(static_cast<uint8_t>(val), global_tick_acc);
+       |         break;
+       |       }
+       |       case InstDetail::BlockStartTick:{
+       |         if (!meta->second.blockStartTickValid) {
+       |           meta->second.blockStartTick = val;
+       |           meta->second.blockStartTickValid = true;
+       |         }
        |         break;
        |       }
        |     }
