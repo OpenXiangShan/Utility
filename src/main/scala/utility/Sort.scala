@@ -79,12 +79,38 @@ object HwSort {
     var size = xVec.length
     val res = WireInit(xVec)
 
+    def shouldSwap(a: DataWithPtr[A, B], b: DataWithPtr[A, B]): Bool = {
+      !a.valid && b.valid || (a.valid && b.valid && cmp(b.ptr, a.ptr))
+    }
+
+    def assertSelectionMatrix(selMatrix: Vec[Vec[Bool]], n: Int): Unit = {
+      for (k <- 0 until n) {
+        assert(
+          PopCount((0 until n).map(i => selMatrix(k)(i))) === 1.U,
+          s"HwSort output slot $k must select exactly one input"
+        )
+      }
+      for (i <- 0 until n) {
+        val pickedCnt = PopCount((0 until n).map(k => selMatrix(k)(i)))
+        when(xVec(i).valid) {
+          assert(
+            pickedCnt === 1.U,
+            s"HwSort valid input $i must be selected exactly once"
+          )
+        }.otherwise {
+          assert(
+            pickedCnt <= 1.U,
+            s"HwSort input $i is selected multiple times"
+          )
+        }
+      }
+    }
+
     if (size == 1) {
       res := xVec
     } else if (size == 2) {
       // total ~20 ps
-      // Put valid elements first. If both are valid, sort them by cmp.
-      val swap = xVec(1).valid && (!xVec(0).valid || cmp(xVec(1).ptr, xVec(0).ptr))
+      val swap = shouldSwap(xVec(0), xVec(1))
       when(swap) {
         res(0) := xVec(1)
         res(1) := xVec(0)
@@ -93,56 +119,65 @@ object HwSort {
         res(1) := xVec(1)
       }
     } else if (size == 3) {
-      // total ~40 ps
-      val row0 = WireInit(xVec)
-      val row1 = Wire(chiselTypeOf(xVec))
-      val row2 = Wire(chiselTypeOf(xVec))
-      val row3 = Wire(chiselTypeOf(xVec))
+      // Sort 3 inputs with one parallel compare layer and a single payload select.
+      def olderLH(i: Int, j: Int): Bool = {
+        require(i < j)
+        !shouldSwap(xVec(i), xVec(j))
+      }
 
-      val tmp0 = apply(VecInit(row0.slice(0, 2)))
-      row1(0) := tmp0(0)
-      row1(1) := tmp0(1)
-      row1(2) := row0(2)
-      val tmp1 = apply(VecInit(row1.slice(1, 3)))
-      row2(0) := row1(0)
-      row2(1) := tmp1(0)
-      row2(2) := tmp1(1)
-      val tmp2 = apply(VecInit(row2.slice(0, 2)))
-      row3(0) := tmp2(0)
-      row3(1) := tmp2(1)
-      row3(2) := row2(2)
+      val o01 = olderLH(0, 1)
+      val o02 = olderLH(0, 2)
+      val o12 = olderLH(1, 2)
 
-      res := row3
+      val rank = Wire(Vec(3, UInt(2.W)))
+      val rankOH = Wire(Vec(3, UInt(3.W)))
+      val selMatrix = Wire(Vec(3, Vec(3, Bool())))
+      rank(0) := PopCount(Seq(!o01, !o02))
+      rank(1) := PopCount(Seq(o01, !o12))
+      rank(2) := PopCount(Seq(o02, o12))
+      for (i <- 0 until 3) {
+        rankOH(i) := UIntToOH(rank(i), 3)
+      }
+
+      for (k <- 0 until 3) {
+        for (i <- 0 until 3) {
+          selMatrix(k)(i) := rankOH(i)(k)
+        }
+        res(k) := Mux1H(selMatrix(k), xVec)
+      }
+      assertSelectionMatrix(selMatrix, 3)
 
     } else if (size == 4){
-      // total ~40 ps
-      val row0 = WireInit(xVec)
-      val row1 = Wire(chiselTypeOf(xVec))
-      val row2 = Wire(chiselTypeOf(xVec))
-      val row3 = Wire(chiselTypeOf(xVec))
+      def olderLH(i: Int, j: Int): Bool = {
+        require(i < j)
+        !shouldSwap(xVec(i), xVec(j))
+      }
 
-      val tmp1_1 = apply(VecInit(row0(0), row0(1)))
-      row1(0) := tmp1_1(0)
-      row1(1) := tmp1_1(1)
-      val tmp1_2 = apply(VecInit(row0(2), row0(3)))
-      row1(2) := tmp1_2(0)
-      row1(3) := tmp1_2(1)
-      
-      val tmp2_1 = apply(VecInit(row1(1), row1(2)))
-      row2(1) := tmp2_1(0)
-      row2(2) := tmp2_1(1)
-      val tmp2_2 = apply(VecInit(row1(0), row1(3)))
-      row2(0) := tmp2_2(0)
-      row2(3) := tmp2_2(1)
+      val o01 = olderLH(0, 1)
+      val o02 = olderLH(0, 2)
+      val o03 = olderLH(0, 3)
+      val o12 = olderLH(1, 2)
+      val o13 = olderLH(1, 3)
+      val o23 = olderLH(2, 3)
 
-      val tmp3_1 = apply(VecInit(row2(0), row2(1)))
-      row3(0) := tmp3_1(0)
-      row3(1) := tmp3_1(1)
-      val tmp3_2 = apply(VecInit(row2(2), row2(3)))
-      row3(2) := tmp3_2(0)
-      row3(3) := tmp3_2(1)
+      val rank = Wire(Vec(4, UInt(2.W)))
+      val rankOH = Wire(Vec(4, UInt(4.W)))
+      val selMatrix = Wire(Vec(4, Vec(4, Bool())))
+      rank(0) := PopCount(Seq(!o01, !o02, !o03))
+      rank(1) := PopCount(Seq(o01, !o12, !o13))
+      rank(2) := PopCount(Seq(o02, o12, !o23))
+      rank(3) := PopCount(Seq(o03, o13, o23))
+      for (i <- 0 until 4) {
+        rankOH(i) := UIntToOH(rank(i), 4)
+      }
 
-      res := row3
+      for (k <- 0 until 4) {
+        for (i <- 0 until 4) {
+          selMatrix(k)(i) := rankOH(i)(k)
+        }
+        res(k) := Mux1H(selMatrix(k), xVec)
+      }
+      assertSelectionMatrix(selMatrix, 4)
 
     } else {
       require(false, f"xVec's size is ${size}, which is so big for hardware sort")
