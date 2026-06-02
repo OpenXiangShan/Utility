@@ -79,6 +79,17 @@ object HwSort {
     var size = xVec.length
     val res = WireInit(xVec)
 
+    /**
+      * shouldSwap(a, b) == true means a and b should be swapped,
+      * i.e., b should be placed before a (b has priority / is considered "older").
+      *
+      * Cases:
+      * - a.valid=1, b.valid=1: decided by cmp(b.ptr, a.ptr) (compare ptrs). If cmp(b,a) == true,
+      *   then b is older and we swap; otherwise no swap.
+      * - a.valid=1, b.valid=0: a is valid and b is invalid -> no swap (valid elements have priority).
+      * - a.valid=0, b.valid=1: a is invalid and b is valid -> swap (place valid before invalid).
+      * - a.valid=0, b.valid=0: both invalid -> no swap (this comparison does not prioritize either).
+      */
     def shouldSwap(a: DataWithPtr[A, B], b: DataWithPtr[A, B]): Bool = {
       !a.valid && b.valid || (a.valid && b.valid && cmp(b.ptr, a.ptr))
     }
@@ -118,66 +129,53 @@ object HwSort {
         res(0) := xVec(0)
         res(1) := xVec(1)
       }
-    } else if (size == 3) {
-      // Sort 3 inputs with one parallel compare layer and a single payload select.
+    } else if (size >= 3 && size <= 4) {
+      
+      // olderLH(i,j) indicates that input i is older than input j (i should come before j).
+      // - When both are invalid (valid=0), the input with the smaller index is considered older (tie-break).
+      // - When one is valid and the other is invalid, the valid one is considered older (has priority).
       def olderLH(i: Int, j: Int): Bool = {
         require(i < j)
         !shouldSwap(xVec(i), xVec(j))
       }
 
-      val o01 = olderLH(0, 1)
-      val o02 = olderLH(0, 2)
-      val o12 = olderLH(1, 2)
+      val rankWidth = log2Ceil(size)
+      val rank = Wire(Vec(size, UInt(rankWidth.W)))
+      val rankOH = Wire(Vec(size, UInt(size.W)))
+      val selMatrix = Wire(Vec(size, Vec(size, Bool())))
 
-      val rank = Wire(Vec(3, UInt(2.W)))
-      val rankOH = Wire(Vec(3, UInt(3.W)))
-      val selMatrix = Wire(Vec(3, Vec(3, Bool())))
-      rank(0) := PopCount(Seq(!o01, !o02))
-      rank(1) := PopCount(Seq(o01, !o12))
-      rank(2) := PopCount(Seq(o02, o12))
-      for (i <- 0 until 3) {
-        rankOH(i) := UIntToOH(rank(i), 3)
+      // ageMatrix(i)(j) := true if input j is older than input i
+      val ageMatrix = Wire(Vec(size, Vec(size, Bool())))
+      for (i <- 0 until size) {
+        for (j <- 0 until size) {
+          if (i == j) {
+            ageMatrix(i)(j) := false.B
+          } else if (j < i) {
+            ageMatrix(i)(j) := olderLH(j, i)
+          } else {
+            ageMatrix(i)(j) := !olderLH(i, j)
+          }
+        }
       }
 
-      for (k <- 0 until 3) {
-        for (i <- 0 until 3) {
-          selMatrix(k)(i) := rankOH(i)(k)
+      // rank(i) = number of inputs older than input i (i's target output index)
+      for (i <- 0 until size) {
+        rank(i) := PopCount((0 until size).map(j => ageMatrix(i)(j)))
+      }
+
+      // rankMatrix: per-input one-hot encoding of its rank (input-as-row, output-as-col)
+      val rankMatrix = Wire(Vec(size, UInt(size.W)))
+      for (i <- 0 until size) {
+        rankMatrix(i) := UIntToOH(rank(i), size)
+      }
+
+      for (k <- 0 until size) {
+        for (i <- 0 until size) {
+          selMatrix(k)(i) := rankMatrix(i)(k)
         }
         res(k) := Mux1H(selMatrix(k), xVec)
       }
-      assertSelectionMatrix(selMatrix, 3)
-
-    } else if (size == 4){
-      def olderLH(i: Int, j: Int): Bool = {
-        require(i < j)
-        !shouldSwap(xVec(i), xVec(j))
-      }
-
-      val o01 = olderLH(0, 1)
-      val o02 = olderLH(0, 2)
-      val o03 = olderLH(0, 3)
-      val o12 = olderLH(1, 2)
-      val o13 = olderLH(1, 3)
-      val o23 = olderLH(2, 3)
-
-      val rank = Wire(Vec(4, UInt(2.W)))
-      val rankOH = Wire(Vec(4, UInt(4.W)))
-      val selMatrix = Wire(Vec(4, Vec(4, Bool())))
-      rank(0) := PopCount(Seq(!o01, !o02, !o03))
-      rank(1) := PopCount(Seq(o01, !o12, !o13))
-      rank(2) := PopCount(Seq(o02, o12, !o23))
-      rank(3) := PopCount(Seq(o03, o13, o23))
-      for (i <- 0 until 4) {
-        rankOH(i) := UIntToOH(rank(i), 4)
-      }
-
-      for (k <- 0 until 4) {
-        for (i <- 0 until 4) {
-          selMatrix(k)(i) := rankOH(i)(k)
-        }
-        res(k) := Mux1H(selMatrix(k), xVec)
-      }
-      assertSelectionMatrix(selMatrix, 4)
+      assertSelectionMatrix(selMatrix, size)
 
     } else {
       require(false, f"xVec's size is ${size}, which is so big for hardware sort")
