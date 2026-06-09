@@ -141,7 +141,6 @@ object HwSort {
 
       val rankWidth = log2Ceil(size)
       val rank = Wire(Vec(size, UInt(rankWidth.W)))
-      val rankOH = Wire(Vec(size, UInt(size.W)))
       val selMatrix = Wire(Vec(size, Vec(size, Bool())))
 
       // ageMatrix(i)(j) := true if input j is older than input i
