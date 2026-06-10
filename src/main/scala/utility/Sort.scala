@@ -79,12 +79,49 @@ object HwSort {
     var size = xVec.length
     val res = WireInit(xVec)
 
+    /**
+      * shouldSwap(a, b) == true means a and b should be swapped,
+      * i.e., b should be placed before a (b has priority / is considered "older").
+      *
+      * Cases:
+      * - a.valid=1, b.valid=1: decided by cmp(b.ptr, a.ptr) (compare ptrs). If cmp(b,a) == true,
+      *   then b is older and we swap; otherwise no swap.
+      * - a.valid=1, b.valid=0: a is valid and b is invalid -> no swap (valid elements have priority).
+      * - a.valid=0, b.valid=1: a is invalid and b is valid -> swap (place valid before invalid).
+      * - a.valid=0, b.valid=0: both invalid -> no swap (this comparison does not prioritize either).
+      */
+    def shouldSwap(a: DataWithPtr[A, B], b: DataWithPtr[A, B]): Bool = {
+      !a.valid && b.valid || (a.valid && b.valid && cmp(b.ptr, a.ptr))
+    }
+
+    def assertSelectionMatrix(selMatrix: Vec[Vec[Bool]], n: Int): Unit = {
+      for (k <- 0 until n) {
+        assert(
+          PopCount((0 until n).map(i => selMatrix(k)(i))) === 1.U,
+          s"HwSort output slot $k must select exactly one input"
+        )
+      }
+      for (i <- 0 until n) {
+        val pickedCnt = PopCount((0 until n).map(k => selMatrix(k)(i)))
+        when(xVec(i).valid) {
+          assert(
+            pickedCnt === 1.U,
+            s"HwSort valid input $i must be selected exactly once"
+          )
+        }.otherwise {
+          assert(
+            pickedCnt <= 1.U,
+            s"HwSort input $i is selected multiple times"
+          )
+        }
+      }
+    }
+
     if (size == 1) {
       res := xVec
     } else if (size == 2) {
       // total ~20 ps
-      // Put valid elements first. If both are valid, sort them by cmp.
-      val swap = xVec(1).valid && (!xVec(0).valid || cmp(xVec(1).ptr, xVec(0).ptr))
+      val swap = shouldSwap(xVec(0), xVec(1))
       when(swap) {
         res(0) := xVec(1)
         res(1) := xVec(0)
@@ -92,57 +129,52 @@ object HwSort {
         res(0) := xVec(0)
         res(1) := xVec(1)
       }
-    } else if (size == 3) {
-      // total ~40 ps
-      val row0 = WireInit(xVec)
-      val row1 = Wire(chiselTypeOf(xVec))
-      val row2 = Wire(chiselTypeOf(xVec))
-      val row3 = Wire(chiselTypeOf(xVec))
-
-      val tmp0 = apply(VecInit(row0.slice(0, 2)))
-      row1(0) := tmp0(0)
-      row1(1) := tmp0(1)
-      row1(2) := row0(2)
-      val tmp1 = apply(VecInit(row1.slice(1, 3)))
-      row2(0) := row1(0)
-      row2(1) := tmp1(0)
-      row2(2) := tmp1(1)
-      val tmp2 = apply(VecInit(row2.slice(0, 2)))
-      row3(0) := tmp2(0)
-      row3(1) := tmp2(1)
-      row3(2) := row2(2)
-
-      res := row3
-
-    } else if (size == 4){
-      // total ~40 ps
-      val row0 = WireInit(xVec)
-      val row1 = Wire(chiselTypeOf(xVec))
-      val row2 = Wire(chiselTypeOf(xVec))
-      val row3 = Wire(chiselTypeOf(xVec))
-
-      val tmp1_1 = apply(VecInit(row0(0), row0(1)))
-      row1(0) := tmp1_1(0)
-      row1(1) := tmp1_1(1)
-      val tmp1_2 = apply(VecInit(row0(2), row0(3)))
-      row1(2) := tmp1_2(0)
-      row1(3) := tmp1_2(1)
+    } else if (size >= 3 && size <= 4) {
       
-      val tmp2_1 = apply(VecInit(row1(1), row1(2)))
-      row2(1) := tmp2_1(0)
-      row2(2) := tmp2_1(1)
-      val tmp2_2 = apply(VecInit(row1(0), row1(3)))
-      row2(0) := tmp2_2(0)
-      row2(3) := tmp2_2(1)
+      // olderLH(i,j) indicates that input i is older than input j (i should come before j).
+      // - When both are invalid (valid=0), the input with the smaller index is considered older (tie-break).
+      // - When one is valid and the other is invalid, the valid one is considered older (has priority).
+      def olderLH(i: Int, j: Int): Bool = {
+        require(i < j)
+        !shouldSwap(xVec(i), xVec(j))
+      }
 
-      val tmp3_1 = apply(VecInit(row2(0), row2(1)))
-      row3(0) := tmp3_1(0)
-      row3(1) := tmp3_1(1)
-      val tmp3_2 = apply(VecInit(row2(2), row2(3)))
-      row3(2) := tmp3_2(0)
-      row3(3) := tmp3_2(1)
+      val rankWidth = log2Ceil(size)
+      val rank = Wire(Vec(size, UInt(rankWidth.W)))
+      val selMatrix = Wire(Vec(size, Vec(size, Bool())))
 
-      res := row3
+      // ageMatrix(i)(j) := true if input j is older than input i
+      val ageMatrix = Wire(Vec(size, Vec(size, Bool())))
+      for (i <- 0 until size) {
+        for (j <- 0 until size) {
+          if (i == j) {
+            ageMatrix(i)(j) := false.B
+          } else if (j < i) {
+            ageMatrix(i)(j) := olderLH(j, i)
+          } else {
+            ageMatrix(i)(j) := !olderLH(i, j)
+          }
+        }
+      }
+
+      // rank(i) = number of inputs older than input i (i's target output index)
+      for (i <- 0 until size) {
+        rank(i) := PopCount((0 until size).map(j => ageMatrix(i)(j)))
+      }
+
+      // rankMatrix: per-input one-hot encoding of its rank (input-as-row, output-as-col)
+      val rankMatrix = Wire(Vec(size, UInt(size.W)))
+      for (i <- 0 until size) {
+        rankMatrix(i) := UIntToOH(rank(i), size)
+      }
+
+      for (k <- 0 until size) {
+        for (i <- 0 until size) {
+          selMatrix(k)(i) := rankMatrix(i)(k)
+        }
+        res(k) := Mux1H(selMatrix(k), xVec)
+      }
+      assertSelectionMatrix(selMatrix, size)
 
     } else {
       require(false, f"xVec's size is ${size}, which is so big for hardware sort")
