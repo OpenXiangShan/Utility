@@ -429,6 +429,63 @@ object XSPerfRolling extends HasRegularPerfName {
   }
 }
 
+/**
+ * Generate a sequence of independent XSPerfRolling counters with a common prefix.
+ *
+ * Each entry in perfCntSeq is either:
+ * - (name, valid): counts 1 when perfValid && valid
+ * - (name, valid, value): counts value when perfValid && valid, otherwise 0
+ */
+object XSPerfSeqRolling {
+  private def foreachPerfCnt(
+    perfNamePrefix: String,
+    perfValid: Bool,
+    perfCntSeq: Seq[Product]
+  )(emit: (String, UInt) => Unit): Unit = {
+    perfCntSeq.foreach {
+      case (name: String, valid: Bool, value: UInt) =>
+        emit(s"${perfNamePrefix}_$name", Mux(perfValid && valid, value, 0.U))
+      case (name: String, valid: Bool) =>
+        emit(s"${perfNamePrefix}_$name", perfValid && valid)
+      case _ =>
+        throw new Exception("XSPerfSeqRolling perfCntSeq must be Seq[(String, Bool)] or Seq[(String, Bool, UInt)]")
+    }
+  }
+
+  /**
+   * Cycle-based rolling mode. A rolling point is logged every granularity cycles.
+   */
+  def apply(
+    perfNamePrefix: String,
+    perfValid: Bool,
+    perfCntSeq: Seq[Product],
+    granularity: Int,
+    clock: Clock,
+    reset: Reset
+  )(implicit p: Parameters): Unit = {
+    foreachPerfCnt(perfNamePrefix, perfValid, perfCntSeq) { case (name, perfCnt) =>
+      XSPerfRolling(name, perfCnt, granularity, clock, reset)
+    }
+  }
+
+  /**
+   * Event-based rolling mode. A rolling point is logged when eventTrigger accumulates to granularity.
+   */
+  def apply(
+    perfNamePrefix: String,
+    perfValid: Bool,
+    perfCntSeq: Seq[Product],
+    eventTrigger: UInt,
+    granularity: Int,
+    clock: Clock,
+    reset: Reset
+  )(implicit p: Parameters): Unit = {
+    foreachPerfCnt(perfNamePrefix, perfValid, perfCntSeq) { case (name, perfCnt) =>
+      XSPerfRolling(name, perfCnt, eventTrigger, granularity, clock, reset)
+    }
+  }
+}
+
 object ArbPerf {
   def apply(valids: Seq[Bool], readys: Seq[Bool], outRdy: Bool, name: String)(implicit p: Parameters): Unit = {
     require(valids.size == readys.size)
