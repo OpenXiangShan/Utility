@@ -44,6 +44,9 @@ object MemReqSource extends Enumeration {
   val Prefetch2L3Stride = Value("Prefetch2L3Stride")
   val Prefetch2L3Berti = Value("Prefetch2L3Berti")
   val Prefetch2L3Unknown = Value("Prefetch2L3Unknown")
+  // Append new sources before ReqSourceCount so existing numeric IDs remain
+  // stable for performance databases and external tooling.
+  val Prefetch2L2MDP = Value("Prefetch2L2MDP")
   val ReqSourceCount = Value("ReqSourceCount")
 
   val reqSourceBits = log2Ceil(ReqSourceCount.id)
@@ -68,6 +71,7 @@ object MemReqSource extends Enumeration {
     reqSource === Prefetch2L2TP.id.U ||
     reqSource === Prefetch2L2Berti.id.U ||
     reqSource === Prefetch2L2NL.id.U ||
+    reqSource === Prefetch2L2MDP.id.U ||
     reqSource === Prefetch2L2Unknown.id.U
   }
 }
