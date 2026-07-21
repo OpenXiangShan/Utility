@@ -30,6 +30,7 @@ object MemReqSource extends Enumeration {
   val CPUAtomicData = Value("CPUAtomicData")
   val L1InstPrefetch = Value("L1InstPrefetch")
   val L1DataPrefetch = Value("L1DataPrefetch")
+  val L1DataPrefetchReplay = Value("L1DataPrefetchReplay")
   val PTW = Value("PTW")
   val Prefetch2L2BOP = Value("Prefetch2L2BOP")
   val Prefetch2L2PBOP = Value("Prefetch2L2PBOP")
@@ -56,7 +57,12 @@ object MemReqSource extends Enumeration {
 
   def isL1Prefetch(reqSource: UInt): Bool = {
     reqSource === L1InstPrefetch.id.U ||
-    reqSource === L1DataPrefetch.id.U
+    reqSource === L1DataPrefetch.id.U ||
+    reqSource === L1DataPrefetchReplay.id.U
+  }
+
+  def isL1PrefetchReplay(reqSource: UInt): Bool = {
+    reqSource === L1DataPrefetchReplay.id.U
   }
 
   def isL2Prefetch(reqSource: UInt): Bool = {
