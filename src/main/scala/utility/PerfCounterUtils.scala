@@ -80,6 +80,120 @@ object XSPerfAccumulate extends HasRegularPerfName with XSLogTap {
   }
 }
 
+/**
+ * A scoped variant of the standard performance counter implementation.
+ *
+ * Some reusable Chisel Definitions cannot be reached by a collector outside
+ * their Definition boundary.  The owner of such a Definition can use one of
+ * these collectors locally while still using the standard counter semantics
+ * and dump/clean control protocol.
+ */
+class XSPerfCounterScope extends HasRegularPerfName with XSLogTap {
+  private val accumulates = ListBuffer.empty[(String, UInt)]
+  private val maximums = ListBuffer.empty[(String, UInt, Bool)]
+  private val histograms = ListBuffer.empty[(String, UInt, Bool, Int, Int, Int, Boolean, Boolean)]
+
+  private def enabled(perfLevel: XSPerfLevel)(implicit p: Parameters): Boolean =
+    p(PerfCounterOptionsKey).enablePerfPrint && perfLevel >= p(PerfCounterOptionsKey).perfLevel
+
+  def accumulate(perfName: String, perfCnt: UInt, perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE)
+                (implicit p: Parameters): Unit = {
+    judgeName(perfName)
+    if (enabled(perfLevel)) accumulates += ((perfName, perfCnt))
+  }
+
+  def accumulate(events: Seq[(String, UInt)])(implicit p: Parameters): Unit =
+    events.foreach { case (perfName, perfCnt) => accumulate(perfName, perfCnt) }
+
+  def max(perfName: String, perfCnt: UInt, enable: Bool, perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE)
+         (implicit p: Parameters): Unit = {
+    judgeName(perfName)
+    if (enabled(perfLevel)) maximums += ((perfName, perfCnt, enable))
+  }
+
+  def histogram(
+    perfName: String,
+    perfCnt: UInt,
+    enable: Bool,
+    start: Int,
+    stop: Int,
+    step: Int = 1,
+    leftStrict: Boolean = false,
+    rightStrict: Boolean = false,
+    perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE
+  )(implicit p: Parameters): Unit = {
+    judgeName(perfName)
+    require(start >= 0 && stop > start && (stop - start) / step > 0)
+    if (enabled(perfLevel)) histograms += ((perfName, perfCnt, enable, start, stop, step, leftStrict, rightStrict))
+  }
+
+  def collect(ctrl: LogPerfIO)(implicit p: Parameters): Unit = {
+    val prints = ListBuffer.empty[Printable]
+
+    accumulates.foreach { case (perfName, perfCntSource) =>
+      val perfCnt = tapOrGet(perfCntSource)
+      val counter = RegInit(0.U(64.W)).suggestName(perfName + "Counter")
+      val nextCounter = WireInit(counter + perfCnt).suggestName(perfName + "Next")
+      counter := Mux(ctrl.clean, 0.U, nextCounter)
+      prints += p"$perfName, $nextCounter\n"
+    }
+
+    maximums.foreach { case (perfName, perfCntSource, enableSource) =>
+      val perfCnt = tapOrGet(perfCntSource)
+      val enable = tapOrGet(enableSource)
+      val maximum = RegInit(0.U(64.W)).suggestName(perfName + "Max")
+      val nextMaximum = Mux(enable && perfCnt > maximum, perfCnt, maximum)
+      maximum := Mux(ctrl.clean, 0.U, nextMaximum)
+      prints += p"${perfName}_max, $nextMaximum\n"
+    }
+
+    histograms.foreach { case (perfName, perfCntSource, enableSource, start, stop, step, leftStrict, rightStrict) =>
+      val perfCnt = tapOrGet(perfCntSource)
+      val enable = tapOrGet(enableSource)
+      val sum = RegInit(0.U(64.W)).suggestName(perfName + "Sum")
+      val samples = RegInit(0.U(64.W)).suggestName(perfName + "NSamples")
+      val underflow = RegInit(0.U(64.W)).suggestName(perfName + "Underflow")
+      val overflow = RegInit(0.U(64.W)).suggestName(perfName + "Overflow")
+      when (ctrl.clean) {
+        sum := 0.U
+        samples := 0.U
+        underflow := 0.U
+        overflow := 0.U
+      }.elsewhen(enable) {
+        sum := sum + perfCnt
+        samples := samples + 1.U
+        when (perfCnt < start.U) { underflow := underflow + 1.U }
+        when (perfCnt >= stop.U) { overflow := overflow + 1.U }
+      }
+      prints += p"${perfName}_sum, $sum\n"
+      prints += p"${perfName}_mean, ${sum / samples}\n"
+      prints += p"${perfName}_sampled, $samples\n"
+      prints += p"${perfName}_underflow, $underflow\n"
+      prints += p"${perfName}_overflow, $overflow\n"
+
+      val nBins = (stop - start) / step
+      (0 until nBins).foreach { i =>
+        val binStart = start + i * step
+        val binStop = start + (i + 1) * step
+        val inRange = perfCnt >= binStart.U && perfCnt < binStop.U
+        val leftOutOfRange = if (leftStrict) false.B else perfCnt < start.U && i.U === 0.U
+        val rightOutOfRange = if (rightStrict) false.B else perfCnt >= stop.U && i.U === (nBins - 1).U
+        val counter = RegInit(0.U(64.W)).suggestName(s"${perfName}_${binStart}_${binStop}")
+        when (ctrl.clean) {
+          counter := 0.U
+        }.elsewhen(enable && (inRange || leftOutOfRange || rightOutOfRange)) {
+          counter := counter + 1.U
+        }
+        prints += p"${perfName}_${binStart}_${binStop}, $counter\n"
+      }
+    }
+
+    prints.grouped(1000).foreach { group =>
+      when (ctrl.dump) { printf(group.reduce(_ + _)) }
+    }
+  }
+}
+
 object XSPerfSeqAccumulate {
   /**
    * A utility to generate a sequence of XSPerfAccumulate with common prefixes
