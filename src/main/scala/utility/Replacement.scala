@@ -42,6 +42,12 @@ object ReplacementPolicy {
     case "setplru"   => new SetAssocLRU(n_sets, n_ways, "plru")
     case t => throw new IllegalArgumentException(s"unknown Replacement Policy type $t")
   }
+  def fromString(s: String, n_ways: Int, n_sets: Int, seedBySet: Boolean): SetAssocReplacementPolicy = s.toLowerCase match {
+    case "random"    => new SetAssocRandom(n_sets, n_ways)
+    case "setlru"    => new SetAssocLRU(n_sets, n_ways, "lru", seedBySet)
+    case "setplru"   => new SetAssocLRU(n_sets, n_ways, "plru", seedBySet)
+    case t => throw new IllegalArgumentException(s"unknown Replacement Policy type $t")
+  }
 }
 
 class SetAssocRandom(n_sets : Int, n_ways: Int) extends SetAssocReplacementPolicy {
