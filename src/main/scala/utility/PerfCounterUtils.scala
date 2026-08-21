@@ -61,10 +61,9 @@ object XSPerfAccumulate extends HasRegularPerfName with XSLogTap {
   def apply(perfName: String, perfCnt: UInt, perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE)
            (implicit p: Parameters): Unit = {
     judgeName(perfName)
-    val perfEvent = dontTouch(WireInit(perfCnt).suggestName(perfName + "Event"))
     if (p(PerfCounterOptionsKey).enablePerfPrint && perfLevel >= p(PerfCounterOptionsKey).perfLevel) {
       if(perfInfos.isEmpty) XSLog.registerCaller(collect)
-      perfInfos += ((chisel3.XSCompatibility.currentModule, perfName, perfEvent))
+      perfInfos += ((chisel3.XSCompatibility.currentModule, perfName, perfCnt))
     }
   }
   def collect(ctrl: LogPerfIO)(implicit p: Parameters): Unit = {
@@ -72,7 +71,7 @@ object XSPerfAccumulate extends HasRegularPerfName with XSLogTap {
       val perfCnt = tapOrGet(perfCnt_bore)
       val perfClean = ctrl.clean
       val perfDump = ctrl.dump
-      val counter = RegInit(0.U(64.W)).suggestName(perfName + "Counter")
+      val counter = dontTouch(RegInit(0.U(64.W)).suggestName(perfName + "Counter"))
       val next_counter = WireInit(0.U(64.W)).suggestName(perfName + "Next")
       next_counter := counter + perfCnt
       counter := Mux(perfClean, 0.U, next_counter)
@@ -192,12 +191,9 @@ object XSPerfHistogram extends HasRegularPerfName with XSLogTap {
   )
   (implicit p: Parameters): Unit = {
     judgeName(perfName)
-    val histName = s"${perfName}_${start}_${stop}"
-    val perfValue = dontTouch(WireInit(perfCnt).suggestName(histName + "Value"))
-    val perfEnable = dontTouch(WireInit(enable).suggestName(histName + "Enable"))
     if (p(PerfCounterOptionsKey).enablePerfPrint && perfLevel >= p(PerfCounterOptionsKey).perfLevel) {
       if(perfHistInfos.isEmpty) XSLog.registerCaller(collect)
-      perfHistInfos += ((chisel3.XSCompatibility.currentModule, perfName, perfValue, perfEnable, start, stop, step, left_strict, right_strict))
+      perfHistInfos += ((chisel3.XSCompatibility.currentModule, perfName, perfCnt, enable, start, stop, step, left_strict, right_strict))
     }
   }
   def collect(ctrl: LogPerfIO)(implicit p: Parameters): Unit = {
@@ -207,10 +203,11 @@ object XSPerfHistogram extends HasRegularPerfName with XSLogTap {
       val perfClean = ctrl.clean
       val perfDump = ctrl.dump
 
-      val sum = RegInit(0.U(64.W)).suggestName(perfName + "Sum")
-      val nSamples = RegInit(0.U(64.W)).suggestName(perfName + "NSamples")
-      val underflow = RegInit(0.U(64.W)).suggestName(perfName + "Underflow")
-      val overflow = RegInit(0.U(64.W)).suggestName(perfName + "Overflow")
+      val histName = s"${perfName}_${start}_${stop}"
+      val sum = dontTouch(RegInit(0.U(64.W)).suggestName(histName + "Sum"))
+      val nSamples = dontTouch(RegInit(0.U(64.W)).suggestName(histName + "NSamples"))
+      val underflow = dontTouch(RegInit(0.U(64.W)).suggestName(histName + "Underflow"))
+      val overflow = dontTouch(RegInit(0.U(64.W)).suggestName(histName + "Overflow"))
       when (perfClean) {
         sum := 0.U
         nSamples := 0.U
@@ -227,11 +224,11 @@ object XSPerfHistogram extends HasRegularPerfName with XSLogTap {
         }
       }
 
-      XSPerfPrint(curMod)(perfDump, p"${perfName}_sum, ${sum}\n")
-      XSPerfPrint(curMod)(perfDump, p"${perfName}_mean, ${sum/nSamples}\n")
-      XSPerfPrint(curMod)(perfDump, p"${perfName}_sampled, ${nSamples}\n")
-      XSPerfPrint(curMod)(perfDump, p"${perfName}_underflow, ${underflow}\n")
-      XSPerfPrint(curMod)(perfDump, p"${perfName}_overflow, ${overflow}\n")
+      XSPerfPrint(curMod)(perfDump, p"${histName}_sum, ${sum}\n")
+      XSPerfPrint(curMod)(perfDump, p"${histName}_mean, ${sum/nSamples}\n")
+      XSPerfPrint(curMod)(perfDump, p"${histName}_sampled, ${nSamples}\n")
+      XSPerfPrint(curMod)(perfDump, p"${histName}_underflow, ${underflow}\n")
+      XSPerfPrint(curMod)(perfDump, p"${histName}_overflow, ${overflow}\n")
 
       // drop each perfCnt value into a bin
       val nBins = (stop - start) / step
@@ -256,15 +253,15 @@ object XSPerfHistogram extends HasRegularPerfName with XSLogTap {
           perfCnt >= stop.U && i.U === (nBins - 1).U
         val inc = inRange || leftOutOfRange || rightOutOfRange
 
-        val histName = s"${perfName}_${binRangeStart}_${binRangeStop}"
-        val counter = RegInit(0.U(64.W)).suggestName(histName)
+        val binName = s"${perfName}_${binRangeStart}_${binRangeStop}"
+        val counter = dontTouch(RegInit(0.U(64.W)).suggestName(binName))
         when (perfClean) {
           counter := 0.U
         } .elsewhen(enable && inc) {
           counter := counter + 1.U
         }
 
-        XSPerfPrint(curMod)(perfDump, p"${histName}, $counter\n")
+        XSPerfPrint(curMod)(perfDump, p"${binName}, $counter\n")
       }
     }
   }
