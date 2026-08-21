@@ -61,9 +61,10 @@ object XSPerfAccumulate extends HasRegularPerfName with XSLogTap {
   def apply(perfName: String, perfCnt: UInt, perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE)
            (implicit p: Parameters): Unit = {
     judgeName(perfName)
+    val perfEvent = dontTouch(WireInit(perfCnt).suggestName(perfName + "Event"))
     if (p(PerfCounterOptionsKey).enablePerfPrint && perfLevel >= p(PerfCounterOptionsKey).perfLevel) {
       if(perfInfos.isEmpty) XSLog.registerCaller(collect)
-      perfInfos += ((chisel3.XSCompatibility.currentModule, perfName, perfCnt))
+      perfInfos += ((chisel3.XSCompatibility.currentModule, perfName, perfEvent))
     }
   }
   def collect(ctrl: LogPerfIO)(implicit p: Parameters): Unit = {
