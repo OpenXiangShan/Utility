@@ -192,9 +192,12 @@ object XSPerfHistogram extends HasRegularPerfName with XSLogTap {
   )
   (implicit p: Parameters): Unit = {
     judgeName(perfName)
+    val histName = s"${perfName}_${start}_${stop}"
+    val perfValue = dontTouch(WireInit(perfCnt).suggestName(histName + "Value"))
+    val perfEnable = dontTouch(WireInit(enable).suggestName(histName + "Enable"))
     if (p(PerfCounterOptionsKey).enablePerfPrint && perfLevel >= p(PerfCounterOptionsKey).perfLevel) {
       if(perfHistInfos.isEmpty) XSLog.registerCaller(collect)
-      perfHistInfos += ((chisel3.XSCompatibility.currentModule, perfName, perfCnt, enable, start, stop, step, left_strict, right_strict))
+      perfHistInfos += ((chisel3.XSCompatibility.currentModule, perfName, perfValue, perfEnable, start, stop, step, left_strict, right_strict))
     }
   }
   def collect(ctrl: LogPerfIO)(implicit p: Parameters): Unit = {
