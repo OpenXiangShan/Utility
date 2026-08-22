@@ -22,25 +22,36 @@ import freechips.rocketchip.util._
 
 object SelectByFn {
 
-  class SelectByFn[T <: Data, SelectT <: Data](gen: T, selectGen: SelectT, numIn: Int, fn: (SelectT, SelectT) => Bool) extends Module {
+  class SelectByFn[T <: Data, SelectT <: Data](gen: T, selectGen: SelectT, numIn: Int, fn: (SelectT, SelectT) => Bool, pipe: Boolean = false) extends Module {
     val io = IO(new Bundle() {
       val in = Flipped(Vec(numIn, ValidIO(chiselTypeOf(gen))))
       val sel = Input(Vec(numIn, chiselTypeOf(selectGen)))
       val chosen = ValidIO(chiselTypeOf(gen))
     })
-    def treeSelect(ins: Seq[(Bool, (T, SelectT))]): Seq[(Bool, (T, SelectT))] = {
+
+    type SelectNode = (Bool, (T, SelectT))
+  
+    def pipelineReg(in: SelectNode): SelectNode = {
+      val (valid, (bits, sel)) = in
+      (RegNext(valid, false.B), (RegNext(bits), RegNext(sel)))
+    }
+
+    def selectPair(left: SelectNode, right: SelectNode): SelectNode = {
+      val chosen = MuxT(left._1 && right._1,
+        MuxT(fn(left._2._2, right._2._2), left._2, right._2),
+        MuxT(left._1 && !right._1, left._2, right._2))
+      (left._1 || right._1, chosen)
+    }
+
+    def treeSelect(ins: Seq[SelectNode]): Seq[SelectNode] = {
       ins.length match {
         case 0 | 1 => ins
-        case 2     =>
-          val (left, right) = (ins.head, ins.last)
-          val chosen = MuxT(left._1 && right._1,
-                        MuxT(fn(left._2._2, right._2._2), left._2, right._2),
-                          MuxT(left._1 && !right._1, left._2, right._2))
-          Seq((left._1 || right._1, chosen))
-        case _      =>
-          val left = treeSelect(ins.take(ins.length/2))
-          val right = treeSelect(ins.drop(ins.length/2))
-          treeSelect(left ++ right)
+        case 2 => Seq(selectPair(ins.head, ins.last))
+        case _ =>
+          val nextLevel = ins.grouped(2)
+            .map(_.reduce(selectPair))
+            .toSeq
+          treeSelect(if (pipe) nextLevel.map(pipelineReg) else nextLevel)
       }
     }
 
@@ -64,10 +75,12 @@ object SelectByFn {
     ins:  Seq[ValidIO[T]],
     sels: Seq[SelectT],
     fn:   (SelectT, SelectT) => Bool,
-    moduleName: Option[String] = None
+    moduleName: Option[String] = None,
+    pipe: Boolean = false
   ): ValidIO[T] = {
     require(ins.length == sels.length, "The number of elements and selectors should be the same!")
-    val mod = Module(new SelectByFn(ins.head.bits, sels.head, ins.length, fn)).suggestName(moduleName.getOrElse("SelectByFn"))
+    val mod = Module(new SelectByFn(ins.head.bits, sels.head, ins.length, fn, pipe))
+      .suggestName(moduleName.getOrElse("SelectByFn"))
     mod.io.in <> ins
     mod.io.sel <> sels
     mod.io.chosen
