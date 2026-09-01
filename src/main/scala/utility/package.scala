@@ -1,4 +1,4 @@
-import chisel3.Data
+import chisel3.{Data, UInt}
 
 package object utility {
   @deprecated
@@ -15,4 +15,9 @@ package object utility {
   type SRAMWriteBus[T <: Data] = _root_.utility.sram.SRAMWriteBus[T]
 
   val PerfCCT = utility.TaggedTrace
+
+  implicit class PerfEventDescription[T <: UInt](private val event: (String, T)) extends AnyVal {
+    def withDescription(description: String): PerfEventInfo =
+      PerfEventInfo(event._1, event._2, description)
+  }
 }
