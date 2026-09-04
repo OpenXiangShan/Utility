@@ -45,6 +45,8 @@ object MemReqSource extends Enumeration {
   val Prefetch2L3Stride = Value("Prefetch2L3Stride")
   val Prefetch2L3Berti = Value("Prefetch2L3Berti")
   val Prefetch2L3Unknown = Value("Prefetch2L3Unknown")
+  val CPUMatrixData = Value("CPUMatrixData")
+  val Prefetch2L2Matrix = Value("Prefetch2L2Matrix")
   val ReqSourceCount = Value("ReqSourceCount")
 
   val reqSourceBits = log2Ceil(ReqSourceCount.id)
@@ -70,6 +72,7 @@ object MemReqSource extends Enumeration {
     reqSource === Prefetch2L2Berti.id.U ||
     reqSource === Prefetch2L2NL.id.U ||
     reqSource === Prefetch2L2CDP.id.U ||
+    reqSource === Prefetch2L2Matrix.id.U ||
     reqSource === Prefetch2L2Unknown.id.U
   }
 }
