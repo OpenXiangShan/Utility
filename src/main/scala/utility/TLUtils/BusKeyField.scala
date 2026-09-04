@@ -54,8 +54,7 @@ object MemReqSource extends Enumeration {
   def isCPUReq(reqSource: UInt): Bool = {
     reqSource === CPULoadData.id.U ||
     reqSource === CPUStoreData.id.U ||
-    reqSource === CPUAtomicData.id.U ||
-    reqSource === CPUMatrixData.id.U
+    reqSource === CPUAtomicData.id.U
   }
 
   def isL1Prefetch(reqSource: UInt): Bool = {
