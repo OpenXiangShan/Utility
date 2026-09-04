@@ -50,6 +50,7 @@ object MemReqSource extends Enumeration {
   // treating CUTE traffic as ordinary CPU requests.
   val MatrixRead = Value("MatrixRead")
   val MatrixWrite = Value("MatrixWrite")
+  val Prefetch2L2Matrix = Value("Prefetch2L2Matrix")
   val ReqSourceCount = Value("ReqSourceCount")
 
   val reqSourceBits = log2Ceil(ReqSourceCount.id)
@@ -80,6 +81,7 @@ object MemReqSource extends Enumeration {
     reqSource === Prefetch2L2Berti.id.U ||
     reqSource === Prefetch2L2NL.id.U ||
     reqSource === Prefetch2L2CDP.id.U ||
+    reqSource === Prefetch2L2Matrix.id.U ||
     reqSource === Prefetch2L2Unknown.id.U
   }
 }
