@@ -266,6 +266,34 @@ object XSPerfHistogram extends HasRegularPerfName with XSLogTap {
   }
 }
 
+object XSPerfMin extends HasRegularPerfName with XSLogTap {
+  private val perfMinInfos = ListBuffer.empty[(Option[BaseModule], String, UInt, Bool)]
+
+  def apply(perfName: String, perfCnt: UInt, enable: Bool, perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE)
+           (implicit p: Parameters): Unit = {
+    judgeName(perfName)
+    if (p(PerfCounterOptionsKey).enablePerfPrint && perfLevel >= p(PerfCounterOptionsKey).perfLevel) {
+      if (perfMinInfos.isEmpty) XSLog.registerCaller(collect)
+      perfMinInfos += ((chisel3.XSCompatibility.currentModule, perfName, perfCnt, enable))
+    }
+  }
+
+  def collect(ctrl: LogPerfIO)(implicit p: Parameters): Unit = {
+    perfMinInfos.foreach { case (curMod, perfName, perfCntBore, enableBore) =>
+      val perfCnt = tapOrGet(perfCntBore)
+      val enable = tapOrGet(enableBore)
+      val min = RegInit(0.U(64.W))
+      val sampled = RegInit(false.B)
+      val nextMin = Mux(enable && (!sampled || perfCnt < min), perfCnt, min)
+      val nextSampled = sampled || enable
+      min := Mux(ctrl.clean, 0.U, nextMin)
+      sampled := Mux(ctrl.clean, false.B, nextSampled)
+
+      XSPerfPrint(curMod)(ctrl.dump, p"${perfName}_min, ${Mux(nextSampled, nextMin, 0.U)}\n")
+    }
+  }
+}
+
 object XSPerfMax extends HasRegularPerfName with XSLogTap {
   private val perfMaxInfos = ListBuffer.empty[(Option[BaseModule], String, UInt, Bool)]
   def apply(perfName: String, perfCnt: UInt, enable: Bool, perfLevel: XSPerfLevel = XSPerfLevel.VERBOSE)
