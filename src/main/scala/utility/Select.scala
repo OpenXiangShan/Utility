@@ -30,7 +30,7 @@ object SelectByFn {
     })
 
     type SelectNode = (Bool, (T, SelectT))
-  
+
     def pipelineReg(in: SelectNode): SelectNode = {
       val (valid, (bits, sel)) = in
       (RegNext(valid, false.B), (RegNext(bits), RegNext(sel)))

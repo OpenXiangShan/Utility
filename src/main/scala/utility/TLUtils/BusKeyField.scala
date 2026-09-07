@@ -45,8 +45,14 @@ object MemReqSource extends Enumeration {
   val Prefetch2L3Stride = Value("Prefetch2L3Stride")
   val Prefetch2L3Berti = Value("Prefetch2L3Berti")
   val Prefetch2L3Unknown = Value("Prefetch2L3Unknown")
+  // Kept for compatibility with the earlier matrix request-source API.
   val CPUMatrixData = Value("CPUMatrixData")
   val Prefetch2L2Matrix = Value("Prefetch2L2Matrix")
+  // Matrix accesses are issued by CUTE rather than the CPU pipeline. Keep
+  // reads and writes distinct so cache accounting can classify them without
+  // treating CUTE traffic as ordinary CPU requests.
+  val MatrixRead = Value("MatrixRead")
+  val MatrixWrite = Value("MatrixWrite")
   val ReqSourceCount = Value("ReqSourceCount")
 
   val reqSourceBits = log2Ceil(ReqSourceCount.id)
@@ -60,6 +66,12 @@ object MemReqSource extends Enumeration {
   def isL1Prefetch(reqSource: UInt): Bool = {
     reqSource === L1InstPrefetch.id.U ||
     reqSource === L1DataPrefetch.id.U
+  }
+
+  def isMatrixReq(reqSource: UInt): Bool = {
+    reqSource === CPUMatrixData.id.U ||
+    reqSource === MatrixRead.id.U ||
+    reqSource === MatrixWrite.id.U
   }
 
   def isL2Prefetch(reqSource: UInt): Bool = {
