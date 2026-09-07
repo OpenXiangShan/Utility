@@ -69,7 +69,6 @@ object MemReqSource extends Enumeration {
   }
 
   def isMatrixReq(reqSource: UInt): Bool = {
-    reqSource === CPUMatrixData.id.U ||
     reqSource === MatrixRead.id.U ||
     reqSource === MatrixWrite.id.U
   }
