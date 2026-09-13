@@ -27,15 +27,23 @@ abstract class FastArbiterBase[T <: Data](val gen: T, val n: Int) extends Module
   val io = IO(new FastArbiterIO[T](gen, n))
 }
 
-class FastArbiter[T <: Data](gen: T, n: Int) extends FastArbiterBase[T](gen, n) {
+class FastArbiter[T <: Data](gen: T, n: Int, val rotateOnBlock: Boolean = false) extends FastArbiterBase[T](gen, n) {
 
   val chosenOH = Wire(UInt(n.W))
   val valids = VecInit(io.in.map(_.valid)).asUInt
+
+  // rotateOnBlock: also advance the RR base when the currently selected request
+  // is rejected (valid but not ready), so that a blocked head cannot freeze the
+  // channel — the next cycle selects the next requester in RR order.
+  // Consumption still happens only on out.fire; a rotated-away requester stays
+  // valid and is re-selected in later rotations.
+  val rrAdvance = io.out.fire || (rotateOnBlock.B && io.out.valid && !io.out.ready)
+
   // the reqs that we didn't choose in last cycle
   val pendingMask = RegEnable(
     valids & (~chosenOH).asUInt, // make IDEA happy ...
     0.U(n.W),
-    io.out.fire
+    rrAdvance
   )
   // select a req from pending reqs by RR
   /*
@@ -44,7 +52,7 @@ class FastArbiter[T <: Data](gen: T, n: Int) extends FastArbiterBase[T](gen, n) 
    */
   val rrGrantMask = RegEnable(VecInit((0 until n) map { i =>
     if(i == 0) false.B else chosenOH(i - 1, 0).orR
-  }).asUInt, 0.U(n.W), io.out.fire)
+  }).asUInt, 0.U(n.W), rrAdvance)
   val rrSelOH = MaskToOH(rrGrantMask & pendingMask)
   val firstOneOH = MaskToOH(valids)
   val rrValid = (rrSelOH & valids).orR
