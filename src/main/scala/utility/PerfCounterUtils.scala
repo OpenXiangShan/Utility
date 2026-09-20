@@ -76,7 +76,7 @@ object XSPerfAccumulate extends HasRegularPerfName with XSLogTap {
       next_counter := counter + perfCnt
       counter := Mux(perfClean, 0.U, next_counter)
 
-      XSPerfPrint(curMod)(perfDump, p"$perfName, $next_counter\n")
+      XSPerfPrint(curMod)(perfDump, p"$perfName, $counter\n")
     }
   }
 
