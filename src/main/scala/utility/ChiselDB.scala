@@ -240,6 +240,16 @@ object ChiselDB {
         val t = new Table[T](!(basicDB & this.enable), tableName, hw)
         table_map += (tableName -> t)
         t
+
+      })
+  }
+
+  def createRuntimeGatedTable[T <: Record](tableName: String, hw: T): Table[T] = {
+    getTable(tableName, hw)
+      .getOrElse({
+        val t = new Table[T](envInFPGA = false, tableName, hw)
+        table_map += (tableName -> t)
+        t
       })
   }
 
