@@ -80,6 +80,53 @@ object XSPerfAccumulate extends HasRegularPerfName with XSLogTap {
   }
 }
 
+/** Count completed requests and matched segments without importing pre-reset latency into the new ROI. */
+object XSPerfRequestLatency extends HasRegularPerfName with XSLogTap {
+  private case class Sample(module: Option[BaseModule], name: String,
+    start: UInt, now: UInt, alloc: UInt, hasMshr: Bool, complete: Bool)
+  private val samples = ListBuffer.empty[Sample]
+
+  def apply(name: String, start: UInt, now: UInt, alloc: UInt, hasMshr: Bool, complete: Bool)
+           (implicit p: Parameters): Unit = {
+    judgeName(name)
+    if (p(PerfCounterOptionsKey).enablePerfPrint &&
+        XSPerfLevel.VERBOSE >= p(PerfCounterOptionsKey).perfLevel) {
+      if (samples.isEmpty) XSLog.registerCaller(collect)
+      samples += Sample(chisel3.XSCompatibility.currentModule, name, start, now, alloc, hasMshr, complete)
+    }
+  }
+
+  def collect(ctrl: LogPerfIO)(implicit p: Parameters): Unit = {
+    samples.foreach { sample =>
+      val start = tapOrGet(sample.start)
+      val now = tapOrGet(sample.now)
+      val alloc = tapOrGet(sample.alloc)
+      val hasMshr = tapOrGet(sample.hasMshr)
+      val complete = tapOrGet(sample.complete)
+      val roiStart = RegInit(0.U(64.W))
+      when (ctrl.clean) { roiStart := now + 1.U }
+      val crossRoi = complete && start < roiStart
+      val accepted = complete && !crossRoi && !ctrl.clean
+      val total = now - start
+      val beforeMshr = Mux(hasMshr, alloc - start, total)
+      val updates = Seq(
+        "sum" -> Mux(accepted, total, 0.U),
+        "cnt" -> accepted.asUInt,
+        "pre_mshr_sum" -> Mux(accepted, beforeMshr, 0.U),
+        "mshr_cnt" -> (accepted && hasMshr).asUInt,
+        "cross_roi_cnt" -> (crossRoi && !ctrl.clean).asUInt
+      )
+      for ((suffix, update) <- updates) {
+        val name = s"${sample.name}_$suffix"
+        val counter = RegInit(0.U(64.W)).suggestName(s"${name}Counter")
+        val next = counter + update
+        counter := Mux(ctrl.clean, 0.U, next)
+        XSPerfPrint(sample.module)(ctrl.dump, p"$name, $next\n")
+      }
+    }
+  }
+}
+
 object XSPerfSeqAccumulate {
   /**
    * A utility to generate a sequence of XSPerfAccumulate with common prefixes
