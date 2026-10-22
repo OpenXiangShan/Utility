@@ -407,16 +407,26 @@ object FastAdderComparator {
 
 }
 
-object MaskToOH {
-  def apply(mask: Seq[Bool]): UInt = {
-    val oh = VecInit(mask.zipWithIndex.map{
-      case (b, 0) => b
-      case (b, i) => b && !Cat(mask.take(i)).orR
-    }).asUInt
-    oh
+/** Bit i is set when any input bit below i is set.  Build all prefixes in
+  * logarithmic stages instead of sharing a serial chain of growing reductions.
+  */
+object LowerMaskPrefix {
+  def apply(mask: UInt): UInt = {
+    val width = mask.getWidth
+    require(width > 0)
+    var inclusive = mask
+    for (stage <- 0 until log2Ceil(width)) {
+      val distance = 1 << stage
+      inclusive = inclusive | (inclusive << distance)(width - 1, 0)
+    }
+    if (width == 1) 0.U(1.W) else Cat(inclusive(width - 2, 0), 0.U(1.W))
   }
+}
+
+object MaskToOH {
+  def apply(mask: Seq[Bool]): UInt = apply(VecInit(mask).asUInt)
 
   def apply(mask: UInt): UInt = {
-    apply(mask.asBools)
+    mask & ~LowerMaskPrefix(mask)
   }
 }

@@ -136,6 +136,13 @@ class SECCode extends Code
     (hamm2sys, sys2hamm, syndrome _)
   }
 
+  // Systematic-code masks, shared with SECDED's error-only parity check.
+  private[utility] def syndromeMasks(n: Int): Seq[BigInt] = {
+    val k = n - log2Ceil(n)
+    val (_, _, syndrome) = impl(n, k)
+    (0 until n - k).map(j => syndrome(j).litValue)
+  }
+
   def encode(x: UInt, poison: Bool = false.B) = {
     val k = x.getWidth
     val n = width(k)
@@ -193,6 +200,16 @@ class SECDEDCode extends Code
     val corrected = secdec.corrected
     val correctable = pardec.uncorrectable
     val uncorrectable = !pardec.uncorrectable && secdec.correctable
+
+    override def error = {
+      // Error detection only needs to know whether any parity check is nonzero.
+      // XORing one SEC row into the overall parity row leaves that condition
+      // unchanged, and cancels about half of the wide overall-parity inputs.
+      // Keep the original syndrome/correction classification above unchanged.
+      val secMask = sec.syndromeMasks(x.getWidth - 1).maxBy(_.bitCount)
+      val reducedParityMask = ((BigInt(1) << x.getWidth) - 1) ^ secMask
+      (x & reducedParityMask.U(x.getWidth.W)).xorR || secdec.correctable
+    }
   }
 }
 

@@ -50,13 +50,17 @@ class FastArbiter[T <: Data](gen: T, n: Int, val rotateOnBlock: Boolean = false)
       Eg: chosenOH  0100
        rrGrantMask  0011
    */
-  val rrGrantMask = RegEnable(VecInit((0 until n) map { i =>
-    if(i == 0) false.B else chosenOH(i - 1, 0).orR
-  }).asUInt, 0.U(n.W), rrAdvance)
-  val rrSelOH = MaskToOH(rrGrantMask & pendingMask)
+  val rrGrantMask = RegInit(0.U(n.W))
+  val rrCandidates = rrGrantMask & pendingMask
+  val rrSelOH = MaskToOH(rrCandidates)
   val firstOneOH = MaskToOH(valids)
   val rrValid = (rrSelOH & valids).orR
   chosenOH := Mux(rrValid, rrSelOH, firstOneOH)
+  when(rrAdvance) {
+    // A mask and its lowest set bit have the same lower-bit-OR prefixes.
+    // Avoid encoding the selected one-hot back into the next RR mask.
+    rrGrantMask := Mux(rrValid, LowerMaskPrefix(rrCandidates), LowerMaskPrefix(valids))
+  }
 
   io.out.valid := valids.orR
   io.out.bits := Mux1H(chosenOH, io.in.map(_.bits))
@@ -85,13 +89,15 @@ class LatchFastArbiter[T <: Data](gen: T, n: Int) extends FastArbiterBase[T](gen
     0.U(n.W),
     latch_result
   )
-  val rrGrantMask = RegEnable(VecInit((0 until n) map { i =>
-    if(i == 0) false.B else chosenOH(i - 1, 0).orR
-  }).asUInt, 0.U(n.W), latch_result)
-  val rrSelOH = MaskToOH(rrGrantMask & pendingMask)
+  val rrGrantMask = RegInit(0.U(n.W))
+  val rrCandidates = rrGrantMask & pendingMask
+  val rrSelOH = MaskToOH(rrCandidates)
   val firstOneOH = MaskToOH(valids)
   val rrValid = (rrSelOH & valids).orR
   chosenOH := Mux(rrValid, rrSelOH, firstOneOH)
+  when(latch_result) {
+    rrGrantMask := Mux(rrValid, LowerMaskPrefix(rrCandidates), LowerMaskPrefix(valids))
+  }
 
   when(latch_result) {
     out_valid_reg := true.B
