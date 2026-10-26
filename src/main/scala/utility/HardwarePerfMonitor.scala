@@ -24,6 +24,10 @@ class PerfEvent extends Bundle {
   val value = UInt(6.W)
 }
 
+case class PerfEventInfo(name: String, value: UInt, description: String) {
+  def withName(newName: String): PerfEventInfo = copy(name = newName)
+}
+
 trait HasPerfEvents { this: RawModule =>
   val perfEvents: Seq[(String, UInt)]
 
@@ -43,7 +47,27 @@ trait HasPerfEvents { this: RawModule =>
   def getPerf: Vec[PerfEvent] = io_perf
 }
 
-class HPerfCounter(val numPCnt: Int)(implicit p: Parameters) extends Module with HasPerfEvents {
+trait HasPerfEventInfos { this: RawModule =>
+  val perfEvents: Seq[PerfEventInfo]
+
+  lazy val io_perf: Vec[PerfEvent] = IO(Output(Vec(perfEvents.length, new PerfEvent)))
+  def generatePerfEvent(noRegNext: Option[Seq[Int]] = None): Unit = {
+    for (((out, event), i) <- io_perf.zip(perfEvents).zipWithIndex) {
+      require(!event.name.contains("/"))
+      out.value := RegNext(RegNext(event.value))
+      if (noRegNext.isDefined && noRegNext.get.contains(i)) {
+        out.value := event.value
+      }
+    }
+  }
+  def getPerfEventInfos: Seq[PerfEventInfo] =
+    perfEvents.zip(io_perf).map { case (event, port) => event.copy(value = port.value) }
+  def getPerfEvents: Seq[(String, UInt)] =
+    getPerfEventInfos.map { event => (event.name, event.value) }
+  def getPerf: Vec[PerfEvent] = io_perf
+}
+
+class HPerfCounter(val numPCnt: Int)(implicit p: Parameters) extends Module with HasPerfEventInfos {
   val io = IO(new Bundle {
     val hpm_event   = Input(UInt(64.W))
     val events_sets = Input(Vec(numPCnt, new PerfEvent))
@@ -73,22 +97,22 @@ class HPerfCounter(val numPCnt: Int)(implicit p: Parameters) extends Module with
   val event_step_1_reg = RegNext(event_step_1)
   val selected = combineEvents(event_step_0_reg, event_step_1_reg, event_op_2_reg)
 
-  val perfEvents = Seq(("selected", selected))
+  val perfEvents = Seq(("selected", selected).withDescription("Combined increment selected by one mhpmevent register."))
   generatePerfEvent()
 }
 
-class HPerfMonitor(numCSRPCnt: Int, numPCnt: Int)(implicit p: Parameters) extends Module with HasPerfEvents {
+class HPerfMonitor(numCSRPCnt: Int, numPCnt: Int)(implicit p: Parameters) extends Module with HasPerfEventInfos {
   val io = IO(new Bundle {
     val hpm_event   = Input(Vec(numCSRPCnt, UInt(64.W)))
     val events_sets = Input(Vec(numPCnt, new PerfEvent))
   })
 
-  val perfEvents = io.hpm_event.zipWithIndex.map{ case (hpm, i) =>
+  val perfEvents = io.hpm_event.zipWithIndex.map { case (hpm, i) =>
     val hpc = Module(new HPerfCounter(numPCnt))
     hpc.io.events_sets <> io.events_sets
     hpc.io.hpm_event   := hpm
-    val selected = hpc.getPerfEvents.head
-    (s"${selected._1}_$i", selected._2)
+    val selected = hpc.getPerfEventInfos.head
+    selected.withName(s"${selected.name}_$i")
   }
   generatePerfEvent()
 }
