@@ -636,6 +636,27 @@ object TaggedTrace {
        |    perfCCT->commitMeta(order_id, sn, block_size);
        |  }
        |}
+       |#ifdef GSIM
+       |void GlobalSimNegedge_DPIC_Helper(uint8_t reset, uint8_t en) {
+       |  if (en && !reset && perfCCT) globalSimNegedge();
+       |}
+       |void CreateInstMeta_DPIC_Helper(uint8_t reset, uint8_t en, uint64_t &sn,
+       |                                uint64_t order_id, uint64_t pc, uint64_t instcode) {
+       |  sn = en && !reset && perfCCT ? createInstMeta(order_id, pc, instcode) : 0;
+       |}
+       |void UpdateInstPos_DPIC_Helper(uint8_t reset, uint8_t en, uint64_t sn,
+       |                               uint64_t uopIdx, uint64_t pos) {
+       |  if (en && !reset && perfCCT) updateInstPos(sn, uopIdx, static_cast<InstPos>(pos));
+       |}
+       |void UpdateInstMeta_DPIC_Helper(uint8_t reset, uint8_t en, uint64_t sn,
+       |                                uint64_t uopIdx, uint64_t meta, uint64_t data) {
+       |  if (en && !reset && perfCCT) updateInstMeta(sn, uopIdx, meta, data);
+       |}
+       |void CommitInstMeta_DPIC_Helper(uint8_t reset, uint8_t en, uint64_t order_id,
+       |                                uint64_t sn, uint64_t block_size) {
+       |  if (en && !reset && perfCCT) commitInstMeta(order_id, sn, block_size);
+       |}
+       |#endif
        """.stripMargin
   }
 
