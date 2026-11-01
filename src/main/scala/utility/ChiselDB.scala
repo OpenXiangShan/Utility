@@ -89,8 +89,13 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
         gsimLeaves(field, s"${prefix}_$name")
       }
     case vector: Vec[_] =>
-      vector.zipWithIndex.flatMap { case (field, index) =>
+      val leaves = vector.zipWithIndex.map { case (field, index) =>
         gsimLeaves(field, s"${prefix}_$index")
+      }
+      vector.headOption match {
+        // GSIM lowers nested record vectors field-major.
+        case Some(_: Record) => leaves.transpose.flatten
+        case _ => leaves.flatten
       }
     case field: Element if field.getWidth > 0 => Seq(RefPort(prefix, field.getWidth))
     case _: Element => Seq.empty
