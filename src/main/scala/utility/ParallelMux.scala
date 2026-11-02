@@ -102,8 +102,23 @@ object ParallelPosteriorityMux {
 }
 
 object ParallelPriorityEncoder {
-  def apply(in: Seq[Bool]): UInt = ParallelPriorityMux(in, (0 until in.size).map(_.asUInt))
-  def apply(in: Bits): UInt = apply(in.asBools)
+  def apply(in: Vec[Bool])(implicit source: chisel3.experimental.SourceInfo): UInt = {
+    if (SimulationPrimitives.selected("ParallelPriorityEncoder.Vec", in.length, "distributed")) {
+      require(in.nonEmpty)
+      SimulationPrimitives.index(Cat(in.reverse))
+    } else ParallelPriorityMux(in, (0 until in.length).map(_.U))
+  }
+  def apply(in: Seq[Bool])(implicit source: chisel3.experimental.SourceInfo): UInt = {
+    if (SimulationPrimitives.selected("ParallelPriorityEncoder.Seq", in.size, "distributed")) {
+      require(in.nonEmpty)
+      SimulationPrimitives.index(Cat(in.reverse))
+    } else ParallelPriorityMux(in, (0 until in.size).map(_.asUInt))
+  }
+  def apply(in: Bits)(implicit source: chisel3.experimental.SourceInfo): UInt = {
+    if (SimulationPrimitives.selected("ParallelPriorityEncoder.Bits", in.getWidth, "packed"))
+      SimulationPrimitives.index(in.asUInt)
+    else ParallelPriorityMux(in.asBools, (0 until in.getWidth).map(_.U))
+  }
 }
 
 object ParallelPosteriorityEncoder {

@@ -30,8 +30,19 @@ object PriorityMuxDefault {
 }
 
 object PriorityEncoderDefault {
-  def apply(in: Seq[Bool], default: UInt): UInt = {
-    PriorityMuxDefault(in.zipWithIndex.map(x => x._1 -> x._2.U), default)
+  def apply(in: Vec[Bool], default: UInt)(implicit source: chisel3.experimental.SourceInfo): UInt = {
+    if (SimulationPrimitives.selected("PriorityEncoderDefault.Vec", in.length, "distributed")) {
+      require(in.nonEmpty)
+      val packed = chisel3.util.Cat(in.reverse)
+      Mux(packed.orR, SimulationPrimitives.index(packed), default)
+    } else PriorityMuxDefault(in.zipWithIndex.map(x => x._1 -> x._2.U), default)
+  }
+  def apply(in: Seq[Bool], default: UInt)(implicit source: chisel3.experimental.SourceInfo): UInt = {
+    if (SimulationPrimitives.selected("PriorityEncoderDefault", in.size, "distributed")) {
+      require(in.nonEmpty)
+      val packed = chisel3.util.Cat(in.reverse)
+      Mux(packed.orR, SimulationPrimitives.index(packed), default)
+    } else PriorityMuxDefault(in.zipWithIndex.map(x => x._1 -> x._2.U), default)
   }
 }
 
@@ -50,10 +61,24 @@ object PriorityMuxWithFlag {
 }
 
 object PriorityEncoderWithFlag {
-  def apply(in: Seq[Bool]): (UInt, Bool) = {
-    PriorityMuxWithFlag(in.zipWithIndex.map(x => x._1 -> x._2.U))
+  def apply(in: Vec[Bool])(implicit source: chisel3.experimental.SourceInfo): (UInt, Bool) = {
+    if (SimulationPrimitives.selected("PriorityEncoderWithFlag.Vec", in.length, "distributed")) {
+      require(in.nonEmpty)
+      val packed = chisel3.util.Cat(in.reverse)
+      (SimulationPrimitives.index(packed), packed.orR)
+    } else PriorityMuxWithFlag(in.zipWithIndex.map(x => x._1 -> x._2.U))
   }
-  def apply(in: Bits): (UInt, Bool) = {
-    PriorityEncoderWithFlag(in.asBools)
+  def apply(in: Seq[Bool])(implicit source: chisel3.experimental.SourceInfo): (UInt, Bool) = {
+    if (SimulationPrimitives.selected("PriorityEncoderWithFlag.Seq", in.size, "distributed")) {
+      require(in.nonEmpty)
+      val packed = chisel3.util.Cat(in.reverse)
+      (SimulationPrimitives.index(packed), packed.orR)
+    } else PriorityMuxWithFlag(in.zipWithIndex.map(x => x._1 -> x._2.U))
+  }
+  def apply(in: Bits)(implicit source: chisel3.experimental.SourceInfo): (UInt, Bool) = {
+    if (SimulationPrimitives.selected("PriorityEncoderWithFlag.Bits", in.getWidth, "packed")) {
+      val packed = in.asUInt
+      (SimulationPrimitives.index(packed), packed.orR)
+    } else PriorityEncoderWithFlag(in.asBools)
   }
 }

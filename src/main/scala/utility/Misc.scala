@@ -19,6 +19,7 @@ package utility
 import chisel3._
 import chisel3.util._
 import chisel3.util.random.LFSR
+import utility.PriorityEncoder
 
 // This gets used everywhere, so make the smallest circuit possible ...
 // Given an address and size, create a mask of beatBytes size
