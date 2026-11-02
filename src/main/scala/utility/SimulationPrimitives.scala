@@ -17,7 +17,7 @@ object SimulationPrimitives {
   private val scope = new DynamicVariable[Option[Scope]](None)
 
   def withMode[A](mode: String, report: Option[Path] = None)(body: => A): A = {
-    require(Set("none", "priority-encode").contains(mode), s"Unknown simulation primitives: $mode")
+    require(Set("none", "priority-encode", "popcount").contains(mode), s"Unknown simulation primitives: $mode")
     val state = Scope(mode, ArrayBuffer.empty)
     val result = scope.withValue(Some(state))(body)
     report.foreach { path =>
@@ -46,7 +46,13 @@ object SimulationPrimitives {
     */
   private[utility] def selected(api: String, width: Int, layout: String = "packed")
       (implicit source: SourceInfo): Boolean = {
-    val modeEnabled = scope.value.exists(_.mode == "priority-encode")
+    val modeEnabled = scope.value.exists { state =>
+      state.mode match {
+        case "priority-encode" => !api.startsWith("PopCount")
+        case "popcount" => api.startsWith("PopCount")
+        case _ => false
+      }
+    }
     val enabled = modeEnabled && layout == "packed"
     val decision = if (!modeEnabled) "mode-disabled"
                    else if (layout == "packed") "packed-intrinsic"
@@ -79,6 +85,27 @@ object SimulationPrimitives {
     primitive.out
   }
 
+  /** Count set bits in exactly N packed bits. */
+  private class CountOnes(width: Int) extends RawModule {
+    override def desiredName = s"WolvrixCountOnes$width"
+    val in = IO(Input(UInt(width.W)))
+    val out = IO(Output(UInt(chisel3.util.log2Ceil(BigInt(width) + 1).W)))
+    val carrier = Seq(1, 8, 16, 32, 64).find(_ >= width).getOrElse(width)
+    val result = IntrinsicExpr("circt_dpi_call", UInt(32.W),
+      "functionName" -> StringParam(s"wolvrix_popcount_v1_w$width"),
+      "isClocked" -> IntParam(0), "inputNames" -> StringParam("value"),
+      "outputName" -> StringParam("count"))(true.B, in.pad(carrier))
+    out := result(chisel3.util.log2Ceil(BigInt(width) + 1) - 1, 0)
+  }
+
+  private[utility] def popcount(in: UInt)(implicit source: SourceInfo): UInt = {
+    val width = in.getWidth
+    require(width > 0, "popcount requires a positive known width")
+    val primitive = Module(new CountOnes(width))
+    primitive.in := in
+    primitive.out
+  }
+
   private[utility] def index(in: UInt)(implicit source: SourceInfo): UInt = {
     val width = in.getWidth
     require(width > 0)
@@ -105,5 +132,29 @@ object PriorityEncoder {
       require(in.nonEmpty)
       SimulationPrimitives.index(chisel3.util.Cat(in.reverse))
     } else chisel3.util.PriorityEncoder(in)
+  }
+}
+
+/** Source-compatible entry point for population count. */
+object PopCount {
+  def apply(in: Bits)(implicit source: SourceInfo): UInt = {
+    if (SimulationPrimitives.selected("PopCount.Bits", in.getWidth, "packed"))
+      SimulationPrimitives.popcount(in.asUInt)
+    else chisel3.util.PopCount(in)
+  }
+
+  def apply(in: Vec[Bool])(implicit source: SourceInfo): UInt = {
+    SimulationPrimitives.selected("PopCount.Vec", in.length, "distributed")
+    chisel3.util.PopCount(in)
+  }
+
+  def apply(in: Seq[Bool])(implicit source: SourceInfo): UInt = {
+    SimulationPrimitives.selected("PopCount.Seq", in.size, "distributed")
+    chisel3.util.PopCount(in)
+  }
+
+  def apply(in: Iterable[Bool])(implicit source: SourceInfo): UInt = {
+    SimulationPrimitives.selected("PopCount.Iterable", in.size, "distributed")
+    chisel3.util.PopCount(in)
   }
 }
