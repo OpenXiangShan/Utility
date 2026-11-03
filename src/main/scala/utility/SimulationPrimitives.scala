@@ -17,7 +17,7 @@ object SimulationPrimitives {
   private val scope = new DynamicVariable[Option[Scope]](None)
 
   def withMode[A](mode: String, report: Option[Path] = None)(body: => A): A = {
-    require(Set("none", "priority-encode", "popcount", "popcount-ge4").contains(mode), s"Unknown simulation primitives: $mode")
+    require(Set("none", "priority-encode", "popcount", "popcount-ge4", "gray-decode").contains(mode), s"Unknown simulation primitives: $mode")
     val state = Scope(mode, ArrayBuffer.empty)
     val result = scope.withValue(Some(state))(body)
     report.foreach { path =>
@@ -48,9 +48,10 @@ object SimulationPrimitives {
       (implicit source: SourceInfo): Boolean = {
     val modeMatches = scope.value.exists { state =>
       state.mode match {
-        case "priority-encode" => !api.startsWith("PopCount")
+        case "priority-encode" => api.contains("PriorityEncoder")
         case "popcount" => api.startsWith("PopCount")
         case "popcount-ge4" => api.startsWith("PopCount")
+        case "gray-decode" => api.startsWith("GrayToBinary")
         case _ => false
       }
     }
@@ -113,11 +114,56 @@ object SimulationPrimitives {
     primitive.out
   }
 
+  /** Gray-coded packed bits to the corresponding binary value. */
+  private class GrayToBinaryIntrinsic(width: Int) extends RawModule {
+    override def desiredName = s"WolvrixGrayToBinary$width"
+    val in = IO(Input(UInt(width.W)))
+    val out = IO(Output(UInt(width.W)))
+    val carrier = Seq(1, 8, 16, 32, 64).find(_ >= width).getOrElse(width)
+    val result = IntrinsicExpr("circt_dpi_call", UInt(carrier.W),
+      "functionName" -> StringParam(s"wolvrix_gray_decode_v1_w$width"),
+      "isClocked" -> IntParam(0), "inputNames" -> StringParam("value"),
+      "outputName" -> StringParam("decoded"))(true.B, in.pad(carrier))
+    out := result(width - 1, 0)
+  }
+
+  private[utility] def grayDecode(in: UInt)(implicit source: SourceInfo): UInt = {
+    val width = in.getWidth
+    require(width > 0, "Gray decode requires a positive known width")
+    val primitive = Module(new GrayToBinaryIntrinsic(width))
+    primitive.in := in
+    primitive.out
+  }
+
+  /** Hardware fallback: logarithmic XOR-prefix implementation of Gray decode. */
+  private[utility] def grayDecodeHardware(in: UInt): UInt = {
+    val width = in.getWidth
+    require(width > 0, "Gray decode requires a positive known width")
+    var decoded = in
+    var shift = 1
+    while (shift < width) {
+      decoded = decoded ^ (decoded >> shift)
+      shift <<= 1
+    }
+    decoded
+  }
+
   private[utility] def index(in: UInt)(implicit source: SourceInfo): UInt = {
     val width = in.getWidth
     require(width > 0)
     val resultWidth = math.max(1, chisel3.util.log2Ceil(width))
     Mux(in.orR, ctz(in), (width - 1).U)(resultWidth - 1, 0)
+  }
+}
+
+/** Source-compatible Gray-to-binary utility; the hardware implementation is the default. */
+object GrayToBinary {
+  def apply(in: Bits)(implicit source: SourceInfo): UInt = {
+    val value = in.asUInt
+    if (SimulationPrimitives.selected("GrayToBinary.Bits", value.getWidth, "packed"))
+      SimulationPrimitives.grayDecode(value)
+    else
+      SimulationPrimitives.grayDecodeHardware(value)
   }
 }
 
