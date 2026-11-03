@@ -17,7 +17,7 @@ object SimulationPrimitives {
   private val scope = new DynamicVariable[Option[Scope]](None)
 
   def withMode[A](mode: String, report: Option[Path] = None)(body: => A): A = {
-    require(Set("none", "priority-encode", "popcount").contains(mode), s"Unknown simulation primitives: $mode")
+    require(Set("none", "priority-encode", "popcount", "popcount-ge4").contains(mode), s"Unknown simulation primitives: $mode")
     val state = Scope(mode, ArrayBuffer.empty)
     val result = scope.withValue(Some(state))(body)
     report.foreach { path =>
@@ -46,17 +46,24 @@ object SimulationPrimitives {
     */
   private[utility] def selected(api: String, width: Int, layout: String = "packed")
       (implicit source: SourceInfo): Boolean = {
-    val modeEnabled = scope.value.exists { state =>
+    val modeMatches = scope.value.exists { state =>
       state.mode match {
         case "priority-encode" => !api.startsWith("PopCount")
         case "popcount" => api.startsWith("PopCount")
+        case "popcount-ge4" => api.startsWith("PopCount")
         case _ => false
       }
     }
-    val enabled = modeEnabled && layout == "packed"
+    val modeEnabled = modeMatches
+    val packedEligible = layout == "packed" && (scope.value match {
+      case Some(state) if state.mode == "popcount-ge4" => width >= 4
+      case _ => true
+    })
+    val enabled = modeEnabled && packedEligible
     val decision = if (!modeEnabled) "mode-disabled"
-                   else if (layout == "packed") "packed-intrinsic"
-                   else "distributed-keeps-hardware"
+                   else if (layout != "packed") "distributed-keeps-hardware"
+                   else if (!packedEligible) "packed-below-width-threshold"
+                   else "packed-intrinsic"
     scope.value.foreach(_.entries += Entry(api, width, layout, source.toString,
       chisel3.XSCompatibility.currentModule.map(_.getClass.getName).getOrElse("unknown"), enabled, decision))
     enabled
