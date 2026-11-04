@@ -12,13 +12,13 @@ case object SimulationPrimitivesKey extends Field[String]("none")
 /** Elaboration-scoped choice; the software operation has no runtime state. */
 object SimulationPrimitives {
   private case class Entry(api: String, width: Int, layout: String, source: String,
-                           module: String, enabled: Boolean, decision: String)
-  private case class Scope(mode: String, entries: ArrayBuffer[Entry])
+                           module: String, enabled: Boolean, decision: String, tableId: String = "")
+  private case class Scope(mode: String, entries: ArrayBuffer[Entry], tables: scala.collection.mutable.LinkedHashMap[String, String])
   private val scope = new DynamicVariable[Option[Scope]](None)
 
   def withMode[A](mode: String, report: Option[Path] = None)(body: => A): A = {
-    require(Set("none", "priority-encode", "popcount", "popcount-ge4", "gray-decode").contains(mode), s"Unknown simulation primitives: $mode")
-    val state = Scope(mode, ArrayBuffer.empty)
+    require(Set("none", "priority-encode", "popcount", "popcount-ge4", "gray-decode", "decode-table").contains(mode), s"Unknown simulation primitives: $mode")
+    val state = Scope(mode, ArrayBuffer.empty, scala.collection.mutable.LinkedHashMap.empty)
     val result = scope.withValue(Some(state))(body)
     report.foreach { path =>
       def quote(s: String): String = "\"" + s.flatMap {
@@ -30,12 +30,27 @@ object SimulationPrimitives {
         s"{\"id\":$id,\"api\":${quote(e.api)},\"width\":${e.width}," +
           s"\"layout\":${quote(e.layout)},\"source\":${quote(e.source)}," +
           s"\"module_class\":${quote(e.module)},\"intrinsic\":${e.enabled}," +
-          s"\"decision\":${quote(e.decision)}}"
+          s"\"decision\":${quote(e.decision)},\"table_id\":${quote(e.tableId)}}"
       }
+      val tables = state.tables.map { case (id, payload) => s"${quote(id)}:${quote(payload)}" }.mkString(",")
       Option(path.getParent).foreach(Files.createDirectories(_))
-      Files.writeString(path, s"{\"version\":1,\"mode\":${quote(mode)},\"calls\":[${rows.mkString(",")}]}\n")
+      Files.writeString(path, s"{\"version\":1,\"mode\":${quote(mode)},\"calls\":[${rows.mkString(",")}],\"decode_tables\":{$tables}}\n")
     }
     result
+  }
+
+  private[utility] def selectDecode(api: String, width: Int, payload: Option[String], reason: String)
+      (implicit source: SourceInfo): Boolean = {
+    val enabled = scope.value.exists(_.mode == "decode-table") && reason.isEmpty
+    val id = payload.map(p => java.security.MessageDigest.getInstance("SHA-256")
+      .digest(p.getBytes(java.nio.charset.StandardCharsets.UTF_8)).map(b => f"${b & 255}%02x").mkString).getOrElse("")
+    scope.value.foreach { state =>
+      payload.foreach(p => state.tables.getOrElseUpdate(id, p))
+      state.entries += Entry(api, width, "table", source.toString,
+        chisel3.XSCompatibility.currentModule.map(_.getClass.getName).getOrElse("unknown"), enabled,
+        if (reason.nonEmpty) reason else if (enabled) "table-intrinsic" else "mode-disabled", id)
+    }
+    enabled
   }
 
   /**
