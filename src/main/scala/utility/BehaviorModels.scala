@@ -38,6 +38,12 @@ object SimulationModels {
     source: String,
   )
 
+  private final case class CheckEntry(
+    name: String,
+    width: Int,
+    source: String,
+  )
+
   private final case class UpdateEntry(
     state: String,
     enable: String,
@@ -56,6 +62,8 @@ object SimulationModels {
     val states = ArrayBuffer.empty[StateEntry]
     val inputs = ArrayBuffer.empty[PortEntry]
     val outputs = ArrayBuffer.empty[PortEntry]
+    val checks = ArrayBuffer.empty[CheckEntry]
+    val capabilities = ArrayBuffer.empty[String]
     val updates = ArrayBuffer.empty[UpdateEntry]
     var commitBoundary: String = ""
     var updateGroup: String = ""
@@ -109,6 +117,11 @@ object SimulationModels {
           s"{\"name\":${quote(entry.name)},\"direction\":${quote(entry.direction)}," +
             s"\"width\":${entry.width},\"source\":${quote(entry.source)}}"
         }.mkString(",")
+        val checks = model.checks.map { entry =>
+          s"{\"name\":${quote(entry.name)},\"width\":${entry.width}," +
+            s"\"source\":${quote(entry.source)}}"
+        }.mkString(",")
+        val capabilities = model.capabilities.map(quote).mkString(",")
         val updates = model.updates.map { entry =>
           s"{\"state\":${quote(entry.state)},\"enable\":${quote(entry.enable)}," +
             s"\"kind\":${quote(entry.kind)},\"source\":${quote(entry.source)}}"
@@ -120,7 +133,8 @@ object SimulationModels {
           s"\"update_group\":${quote(model.updateGroup)}," +
           s"\"source\":${quote(model.source)}," +
           s"\"states\":[$states],\"inputs\":[$inputs]," +
-          s"\"outputs\":[$outputs],\"updates\":[$updates]}"
+          s"\"outputs\":[$outputs],\"checks\":[$checks]," +
+          s"\"capabilities\":[$capabilities],\"updates\":[$updates]}"
       }.mkString(",")
       Option(path.getParent).foreach(Files.createDirectories(_))
       Files.writeString(path, s"{\"version\":1,\"mode\":${quote(mode)},\"models\":[$models]}\n")
@@ -160,7 +174,7 @@ object SimulationModels {
     def read: T = value
 
     def update(enable: Bool, next: T)(implicit source: SourceInfo): Unit =
-      owner.update(this, enable, next, "register")
+      owner.update(this, enable, next, "register", sourceText(source))
   }
 
   /** A small asynchronous-read memory owned by a behavior model. */
@@ -192,6 +206,16 @@ object SimulationModels {
     def output(name: String, data: Data)(implicit source: SourceInfo): Unit =
       addOutput(name, data, source)
 
+    /** Mark a model output that a checker or adapter must consume. */
+    def check(name: String, data: Data)(implicit source: SourceInfo): Unit =
+      entry.checks += CheckEntry(name, widthOf(data), sourceText(source))
+
+    /** Declare the debug capability provided by this model. */
+    def capability(name: String): Unit = {
+      require(name.nonEmpty, "behavior model capability name must not be empty")
+      if (!entry.capabilities.contains(name)) entry.capabilities += name
+    }
+
     def register[T <: Data](name: String, init: T)(implicit source: SourceInfo): BehaviorRegister[T] = {
       val q = RegInit(init)
       q.suggestName(s"behavior_${sanitize(name)}")
@@ -206,9 +230,10 @@ object SimulationModels {
       new BehaviorMemory[T](this, name, rows, mem)
     }
 
-    private[utility] def update[T <: Data](state: BehaviorRegister[T], enable: Bool, next: T, kind: String): Unit = {
+    private[utility] def update[T <: Data](state: BehaviorRegister[T], enable: Bool, next: T,
+                                           kind: String, source: String): Unit = {
       when(enable) { state.value := next }
-      entry.updates += UpdateEntry(state.name, enable.toString, kind, "register")
+      entry.updates += UpdateEntry(state.name, enable.toString, kind, source)
     }
 
     private[utility] def memoryUpdate[T <: Data](state: BehaviorMemory[T], enable: Bool,
