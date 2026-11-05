@@ -190,6 +190,19 @@ object SimulationModels {
       owner.memoryUpdate(this, enable, address, next)
   }
 
+  /** A resettable, indexable state array for compact behavior-model code. */
+  final class BehaviorArray[T <: Data] private[utility] (
+    private[utility] val owner: BehaviorModelContext,
+    val name: String,
+    val rows: Int,
+    val values: Vec[T],
+  ) {
+    def read(address: UInt): T = values(address)
+
+    def update(enable: Bool, address: UInt, next: T)(implicit source: SourceInfo): Unit =
+      owner.arrayUpdate(this, enable, address, next, sourceText(source))
+  }
+
   /** Context exposed to model authors. */
   final class BehaviorModelContext private[utility] (private val entry: ModelEntry) {
     private def addInput(name: String, data: Data, source: SourceInfo): Unit =
@@ -230,6 +243,15 @@ object SimulationModels {
       new BehaviorMemory[T](this, name, rows, mem)
     }
 
+    /** Declare one indexed state array and update one element atomically. */
+    def array[T <: Data](name: String, rows: Int, init: T)(implicit source: SourceInfo): BehaviorArray[T] = {
+      require(rows > 0, s"behavior model array '$name' must have positive rows")
+      val array = RegInit(VecInit(Seq.fill(rows)(init)))
+      array.suggestName(s"behavior_${sanitize(name)}")
+      entry.states += StateEntry(name, "array", widthOf(init), rows, sourceText(source))
+      new BehaviorArray[T](this, name, rows, array)
+    }
+
     private[utility] def update[T <: Data](state: BehaviorRegister[T], enable: Bool, next: T,
                                            kind: String, source: String): Unit = {
       when(enable) { state.value := next }
@@ -240,6 +262,12 @@ object SimulationModels {
                                                   address: UInt, next: T)(implicit source: SourceInfo): Unit = {
       when(enable) { state.value.write(address, next) }
       entry.updates += UpdateEntry(state.name, enable.toString, "memory", sourceText(source))
+    }
+
+    private[utility] def arrayUpdate[T <: Data](state: BehaviorArray[T], enable: Bool,
+                                                 address: UInt, next: T, source: String): Unit = {
+      when(enable) { state.values(address) := next }
+      entry.updates += UpdateEntry(state.name, enable.toString, "array", source)
     }
   }
 }
