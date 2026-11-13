@@ -426,7 +426,7 @@ object ChiselDB {
        |}
        |void clear_db(const char *table_prefix) {
        |  if (!dump) return;
-       |${table_map.keys.map(t => s"""
+       |${table_map.values.filterNot(_.envInFPGA).map(_.tableName).map(t => s"""
        |  if (enable_dump_$t && strncmp("$t", table_prefix, strlen(table_prefix)) == 0) {
        |    rc = sqlite3_exec(mem_db, "DELETE FROM $t;", callback, 0, &zErrMsg);
        |    if (rc != SQLITE_OK) {
