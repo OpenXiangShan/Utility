@@ -83,6 +83,52 @@ trait HasTableUtils {
 
 class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: T) extends HasTableUtils {
 
+  private def gsimLeaves(data: Data, prefix: String): Seq[RefPort] = data match {
+    case record: Record =>
+      record.elements.toSeq.reverse.flatMap { case (name, field) =>
+        gsimLeaves(field, s"${prefix}_$name")
+      }
+    case vector: Vec[_] =>
+      val leaves = vector.zipWithIndex.map { case (field, index) =>
+        gsimLeaves(field, s"${prefix}_$index")
+      }
+      vector.headOption match {
+        // GSIM lowers nested record vectors field-major.
+        case Some(_: Record) => leaves.transpose.flatten
+        case _ => leaves.flatten
+      }
+    case field: Element if field.getWidth > 0 => Seq(RefPort(prefix, field.getWidth))
+    case _: Element => Seq.empty
+  }
+
+  private def genGsimWriter: String = {
+    val ports = gsimLeaves(hw, "data").map { port =>
+      val cppType = if (port.width <= 64) {
+        s"uint${Seq(8, 16, 32, 64).find(_ >= port.width).get}_t"
+      } else {
+        s"unsigned _BitInt(${((port.width + 63) / 64) * 64})"
+      }
+      s"$cppType ${port.ref}"
+    }
+    val arguments = get_columns(hw, "").map { column =>
+      val port = column.refPort
+      if (port.width <= 64) port.ref else {
+        val index = column.field.substring(port.ref.stripPrefix("data_").length + 1).toInt
+        s"uint64_t(${port.ref} >> ${index * 64})"
+      }
+    }
+    s"""
+       |#ifdef GSIM
+       |void ${tableName}Writer(const char *site, uint8_t reset, uint8_t en, uint64_t stamp,
+       |  ${ports.mkString(", ")}) {
+       |  if (en && !reset) {
+       |    ${tableName}_write(${arguments.mkString(", ")}, stamp, const_cast<char *>(site));
+       |  }
+       |}
+       |#endif
+       |""".stripMargin
+  }
+
   def genCpp: (String, String) = {
     val cols = get_columns(hw, "").map(_.field)
     val init =
@@ -141,7 +187,7 @@ class Table[T <: Record](val envInFPGA: Boolean, val tableName: String, val hw: 
          |  char *site
          |) {}
          |""".stripMargin
-    if (envInFPGA) (init_dummy, insert_dummy) else (init, insert)
+    if (envInFPGA) (init_dummy, insert_dummy) else (init, insert + genGsimWriter)
   }
 
   def log(data: T, en: Bool, site: String = "", clock: Clock, reset: Reset): Unit = {
@@ -273,6 +319,7 @@ object ChiselDB {
       |
       |void init_db(bool en, bool select_enable, const char *select_db);
       |void save_db(const char *filename);
+      |void clear_db(const char *table_prefix);
       |
       |#endif
       |""".stripMargin
@@ -376,6 +423,18 @@ object ChiselDB {
        |
        |${table_map.keys.map(t => "  init_db_" + t + "();").mkString("\n")}
        |
+       |}
+       |void clear_db(const char *table_prefix) {
+       |  if (!dump) return;
+       |${table_map.values.filterNot(_.envInFPGA).map(_.tableName).map(t => s"""
+       |  if (enable_dump_$t && strncmp("$t", table_prefix, strlen(table_prefix)) == 0) {
+       |    rc = sqlite3_exec(mem_db, "DELETE FROM $t;", callback, 0, &zErrMsg);
+       |    if (rc != SQLITE_OK) {
+       |      fprintf(stderr, "SQL error: %s\\n", zErrMsg);
+       |      abort();
+       |    }
+       |  }
+       |""".stripMargin).mkString}
        |}
        |$save
        |
