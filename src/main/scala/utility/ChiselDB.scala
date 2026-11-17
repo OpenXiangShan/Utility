@@ -273,6 +273,7 @@ object ChiselDB {
       |
       |void init_db(bool en, bool select_enable, const char *select_db);
       |void save_db(const char *filename);
+      |void clear_db(const char *table_prefix);
       |
       |#endif
       |""".stripMargin
@@ -376,6 +377,18 @@ object ChiselDB {
        |
        |${table_map.keys.map(t => "  init_db_" + t + "();").mkString("\n")}
        |
+       |}
+       |void clear_db(const char *table_prefix) {
+       |  if (!dump) return;
+       |${table_map.values.filterNot(_.envInFPGA).map(_.tableName).map(t => s"""
+       |  if (enable_dump_$t && strncmp("$t", table_prefix, strlen(table_prefix)) == 0) {
+       |    rc = sqlite3_exec(mem_db, "DELETE FROM $t;", callback, 0, &zErrMsg);
+       |    if (rc != SQLITE_OK) {
+       |      fprintf(stderr, "SQL error: %s\\n", zErrMsg);
+       |      abort();
+       |    }
+       |  }
+       |""".stripMargin).mkString}
        |}
        |$save
        |
