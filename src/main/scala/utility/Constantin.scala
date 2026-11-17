@@ -142,6 +142,11 @@ object Constantin extends ConstantinParams {
        |  }
        |  return constantinMap["${constName}"];
        |}
+       |#ifdef GSIM
+       |void ${getModuleName(constName)}(uint64_t &value) {
+       |  value = ${getdpicFunc(constName)}();
+       |}
+       |#endif
        |""".stripMargin
   }
 
