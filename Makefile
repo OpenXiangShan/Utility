@@ -1,9 +1,11 @@
+CHISEL_VERSION ?=
+
 init:
 	git submodule update --init
 	cd rocket-chip && git submodule update --init hardfloat cde
 
 compile:
-	mill -i utility.compile
+	mill -i 'utility[$(CHISEL_VERSION)].compile'
 
 idea:
 	mill -i mill.scalalib.GenIdea/idea
